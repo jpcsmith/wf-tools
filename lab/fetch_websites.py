@@ -9,9 +9,8 @@ from typing import (
     Any,
     Dict,
     Generator,
-    List,
-    TypeVar,
     Optional,
+    TypeVar,
 )
 
 from mypy_extensions import TypedDict
@@ -119,11 +118,6 @@ class ChromiumSession:
 
     A separate session is used for each domain to prevent caching and to force
     QUIC on the provided domain.
-
-    Params:
-        domain: The domain being requested in the session
-        use_quic: Whether to use QUIC or TCP in the request
-        driver_path: The local path to the chrome driver
     """
     def __init__(self, domain: Domain, use_quic: bool,
                  driver_factory: WebDriverFactory):
@@ -194,6 +188,23 @@ class ChromiumSession:
                 f"Fetch failed for {page_url}. Server may not support QUIC.")
 
 
+class SessionFactory(abc.ABC):
+    """Factory class for creating fetch session."""
+    @abstractmethod
+    def create(self, domain: Domain, with_quic: bool) -> ChromiumSession:
+        """Creates and returns a new BrowserSession."""
+
+
+class ChromiumSessionFactory(SessionFactory):
+    """Factory class for ChromiumSessions"""
+    def __init__(self, driver_factory: ChromiumFactory):
+        self._driver_factory = driver_factory
+
+    def create(self, domain: Domain, with_quic: bool) -> ChromiumSession:
+        """Creates and returns a new BrowserSession."""
+        return ChromiumSession(domain, with_quic, self._driver_factory)
+
+
 class PacketSniffer:
     """Class for capturing network traffic."""
     def __init__(self, capture_filter: str = 'tcp or udp port 443'):
@@ -237,93 +248,53 @@ Result = TypedDict('Result', {
 })
 
 
-@dataclass
-class ExperimentConfig:
-    """Experiment configuration."""
-    driver_path: str
-    repetitions: int
-
-    def __post_init__(self) -> None:
-        assert self.driver_path
-        assert self.repetitions > 0
-
-
-class _StopOnErrorException(Exception):
-    """Raised due to early termination of a fetch loop."""
-    def __init__(self, counter: int, *args):
-        super().__init__(*args)
-        self.counter = counter
-
-
 class WebsiteTraceExperiment:
     """Experiment consisting for fetching and tracing website traffic."""
-    def __init__(self, config: ExperimentConfig, domains: List[Domain]):
-        assert domains
+    def __init__(self, sniffer: PacketSniffer, session_factory: SessionFactory):
         self._logger = logging.getLogger(__name__)
-        self._config = config
-        self._domains = domains
-        self._sniffer = PacketSniffer()
+        self._sniffer = sniffer
+        self._session_factory = session_factory
 
-    def run(self) -> SimpleGenerator[Result]:
-        """Runs the experiment and yields the results for each domain requested
-        a number times with QUIC and TCP.
-        """
-        for domain in self._domains:
-            yield from self._run_for_domain(domain)
-
-    def _run_for_domain(self, domain) -> SimpleGenerator[Result]:
-        try:
-            yield from self.fetch_repeatedly(domain, use_quic=True,
-                                             stop_on_error=True)
-            self._logger.info("Fetched all %d results with QUIC for domain %s",
-                              self._config.repetitions, domain)
-        except _StopOnErrorException as err:
-            self._logger.info("Fetched %d/%d results with QUIC for domain %s",
-                              err.counter, self._config.repetitions, domain)
-            yield self.fetch_single(domain, use_quic=False)
-            self._logger.info("Fetched a single result with TCP for domain %s "
-                              "as QUIC erred on first request.", domain)
-        else:
-            yield from self.fetch_repeatedly(domain, use_quic=False,
-                                             stop_on_error=False)
-            self._logger.info("Fetched all %d results with TCP for domain %s",
-                              self._config.repetitions, domain)
-
-    def fetch_repeatedly(
-        self, domain: Domain, use_quic: bool, stop_on_error: bool = False
+    def sample_domain(
+        self, domain: Domain, repetitions: int = 1, stop_on_error: bool = True
     ) -> SimpleGenerator[Result]:
-        """Fetches the domain and yields the results, as often as specified by
-        `config.repetitions`.
+        """Yields the results of sampling with and without QUIC."""
+        failed = ''
 
-        If the fetch fails no exception will be raised but the status will
-        record the type of failure. If `stop_on_error` is True, no more fetches
-        will be made.
-        """
-        for i in range(1, self._config.repetitions + 1):
-            result = self.fetch_single(domain, use_quic)
-            yield result
-            if result['status'] != 'success' and stop_on_error:
-                _StopOnErrorException(i)
+        for repetition in range(1, repetitions + 1):
+            quic_sample = self.sample(domain, use_quic=True)
+            failed += '' if quic_sample['status'] == 'success' else 'QUIC'
+            yield quic_sample
 
-    def fetch_single(self, domain: Domain, use_quic: bool) -> Result:
+            tcp_sample = self.sample(domain, use_quic=False)
+            failed += '' if tcp_sample['status'] == 'success' else (
+                ' and TCP' if failed is not None else 'TCP')
+            yield tcp_sample
+
+            if failed is not None and stop_on_error:
+                self._logger.warning(
+                    'Stopped at repetition %d for domain %s as %s failed.',
+                    repetition, domain, failed)
+                return
+
+    def sample(self, domain: Domain, use_quic: bool) -> Result:
         """Fetch the domain and returns the result."""
         page_source = None
         status = None
 
-        with ChromiumSession(domain, use_quic, self._config.driver_path) \
-                as session:
+        with self._session_factory.create(domain, use_quic) as session:
             self._sniffer.start()
             try:
                 page_source = session.fetch_page()
                 status = Literal['success']
             except FetchTimeout as error:
-                self._logger.warning(
-                    'Failed to fetch domain %s. %s', domain, error)
+                self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
+                                     domain, use_quic, error)
                 page_source = session.page_source
                 status = Literal['timeout']
             except FetchFailed as error:
-                self._logger.warning(
-                    'Failed to fetch domain %s. %s', domain, error)
+                self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
+                                     domain, use_quic, error)
                 status = Literal['failure']
 
             return dict(page_source=page_source, status=status,
