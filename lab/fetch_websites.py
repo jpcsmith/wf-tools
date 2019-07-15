@@ -219,9 +219,14 @@ class PacketSniffer:
 
     def pcap(self) -> bytes:
         """Returns the results in pcap format serialised to bytes."""
+        return PacketSniffer.to_pcap(self.results)
+
+    @staticmethod
+    def to_pcap(packet_list: scapy.plist.PacketList) -> bytes:
+        """Encodes the provided packet list in PCAP format."""
         byte_buffer = io.BytesIO()
         with scapy.utils.PcapWriter(byte_buffer) as writer:
-            writer.write(self.results)
+            writer.write(packet_list)
             writer.flush()
             return byte_buffer.getvalue()
 
@@ -239,7 +244,7 @@ class PacketSniffer:
 
 
 Result = TypedDict('Result', {
-    'domain': str,
+    'domain': Domain,
     'with_quic': bool,
     'page_source': Optional[str],
     'status': Literal['success', 'timeout', 'failure'],
@@ -271,7 +276,7 @@ class WebsiteTraceExperiment:
                 ' and TCP' if failed is not None else 'TCP')
             yield tcp_sample
 
-            if failed is not None and stop_on_error:
+            if failed and stop_on_error:
                 self._logger.warning(
                     'Stopped at repetition %d for domain %s as %s failed.',
                     repetition, domain, failed)
@@ -280,25 +285,25 @@ class WebsiteTraceExperiment:
     def sample(self, domain: Domain, use_quic: bool) -> Result:
         """Fetch the domain and returns the result."""
         page_source = None
-        status = None
+        status: Literal['success', 'timeout', 'failure'] = 'success'
 
         with self._session_factory.create(domain, use_quic) as session:
             self._sniffer.start()
             try:
                 page_source = session.fetch_page()
-                status = Literal['success']
+                status = 'success'
             except FetchTimeout as error:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
                 page_source = session.page_source
-                status = Literal['timeout']
+                status = 'timeout'
             except FetchFailed as error:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
-                status = Literal['failure']
+                status = 'failure'
 
             return dict(page_source=page_source, status=status,
-                        domain=domain.name, with_quic=use_quic,
+                        domain=domain, with_quic=use_quic,
                         http_trace=session.performance_log(),
                         packets=self._sniffer.results)
 
