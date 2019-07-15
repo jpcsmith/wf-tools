@@ -306,16 +306,3 @@ class WebsiteTraceExperiment:
                         domain=domain, with_quic=use_quic,
                         http_trace=session.performance_log(),
                         packets=self._sniffer.results)
-
-
-# def test_exp():
-#     database = tinydb.TinyDB('db.json')
-#     config = ExperimentConfig(
-#         driver_path='tools/chromedriver',
-#         repetitions=1)
-#     experiment = WebsiteTraceExperiment(
-#         config, ['example.com', 'mail.google.com'])
-#     for result in experiment.run():
-#         result['packets'] = base64.b64encode(
-#             serialize_packets(result['packets'])).decode('utf8')
-#         database.insert(result)
