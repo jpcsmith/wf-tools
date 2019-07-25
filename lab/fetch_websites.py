@@ -3,6 +3,7 @@
 import io
 import abc
 from abc import abstractmethod
+import time
 import logging
 from dataclasses import dataclass
 from typing import (
@@ -207,6 +208,8 @@ class ChromiumSessionFactory(SessionFactory):
 
 class PacketSniffer:
     """Class for capturing network traffic."""
+    start_delay = 0.01
+
     def __init__(self, capture_filter: str = 'tcp or udp port 443'):
         self._logger = logging.getLogger(__name__)
         self._filter = capture_filter
@@ -233,14 +236,21 @@ class PacketSniffer:
     def start(self) -> None:
         """Start capturing packets."""
         self._sniffer.start()
+        self._logger.info('Waiting %fs for sniffer to initialise',
+                          self.start_delay)
+        time.sleep(self.start_delay)
         self._logger.info('Began sniffing for traffic with filter "%s"',
                           self._filter)
 
     def stop(self) -> None:
         """Stop capturing packets."""
         self._sniffer.stop()
-        self._logger.info('Sniffing complete. Captured %d packets',
-                          len(self.results))
+        if self.results:
+            self._logger.info('Sniffing complete. Captured %d packets',
+                              len(self.results))
+        else:
+            self._logger.warning('Sniffing complete but failed to capture '
+                                 'packets [result: %s]', self.results)
 
 
 Result = TypedDict('Result', {
@@ -292,6 +302,8 @@ class WebsiteTraceExperiment:
             try:
                 page_source = session.fetch_page()
                 status = 'success'
+                self._logger.info('Successfully fetched domain %s (quic: %s).',
+                                  domain, use_quic)
             except FetchTimeout as error:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
@@ -301,6 +313,8 @@ class WebsiteTraceExperiment:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
                 status = 'failure'
+            finally:
+                self._sniffer.stop()
 
             return dict(page_source=page_source, status=status,
                         domain=domain, with_quic=use_quic,
