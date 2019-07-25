@@ -10,6 +10,14 @@ from os import path
 from pathlib import Path
 from setuptools import setup, find_packages
 
+DEPENDENCIES = [
+    'mypy-extensions',
+    'typing-extensions',
+    'selenium',
+    'scapy'
+]
+
+
 setup(
     name='lab',  # Required
     description='QUIC traffic analysis experiment sources',  # Optional
@@ -34,9 +42,9 @@ setup(
 
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
 
-    install_requires=['paramiko', 'docker'],
+    install_requires=DEPENDENCIES,
     extras_require={  # Optional
         'dev': ['flake8', 'pylint', 'mypy'],
-        'test': [],
+        'test': ['pytest'],
     }
 )
