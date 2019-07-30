@@ -11,10 +11,12 @@ from pathlib import Path
 from setuptools import setup, find_packages
 
 DEPENDENCIES = [
+    'click',
     'mypy-extensions',
-    'typing-extensions',
+    'pandas',
+    'scapy',
     'selenium',
-    'scapy'
+    'typing-extensions',
 ]
 
 
