@@ -88,10 +88,12 @@ class ChromiumFactory(WebDriverFactory):
         """Provide a set of options for the chrome webdriver."""
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
 
         # Necessary when running as root
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-setuid-sandbox')
 
         options.add_argument('--log-level=0')
         options.add_argument('--enable-logging')
