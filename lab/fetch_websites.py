@@ -20,6 +20,7 @@ import scapy.sendrecv
 import selenium
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.common.exceptions import UnexpectedAlertPresentException
 
 # Meta type variable for generic types
 T = TypeVar('T')  # pylint: disable=invalid-name
@@ -309,9 +310,8 @@ class WebsiteTraceExperiment:
             except FetchTimeout as error:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
-                page_source = session.page_source
                 status = 'timeout'
-            except FetchFailed as error:
+            except (FetchFailed, UnexpectedAlertPresentException) as error:
                 self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
                                      domain, use_quic, error)
                 status = 'failure'
