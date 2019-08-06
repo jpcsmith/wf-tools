@@ -20,7 +20,10 @@ import scapy.sendrecv
 import selenium
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.common.exceptions import UnexpectedAlertPresentException
+from selenium.common.exceptions import (
+    UnexpectedAlertPresentException,
+    WebDriverException,
+)
 
 # Meta type variable for generic types
 T = TypeVar('T')  # pylint: disable=invalid-name
@@ -77,8 +80,15 @@ class ChromiumFactory(WebDriverFactory):
 
     def create(self, quic_domain: Optional[Domain]) -> WebDriver:
         options = self.chrome_options(quic_domain)
-        driver = webdriver.Chrome(
-            executable_path=self.driver_path, options=options)
+        try:
+            driver = webdriver.Chrome(
+                executable_path=self.driver_path, options=options)
+        except WebDriverException:
+            self._logger.critical(
+                "Failed to create a webdriver from %s with arguments %s",
+                self.driver_path, options.arguments)
+            raise
+
         self._logger.info('Chromedriver created from %s with arguments %s.',
                           self.driver_path, options.arguments)
         return driver
@@ -274,17 +284,27 @@ class WebsiteTraceExperiment:
         self._session_factory = session_factory
 
     def sample_domain(
-        self, domain: Domain, repetitions: int = 1, stop_on_error: bool = True
+        self, domain: Domain, repetitions: int = 1, stop_on_error: bool = True,
+        keep_sources: Literal['all', 'first', 'none'] = 'all'
     ) -> SimpleGenerator[Result]:
-        """Yields the results of sampling with and without QUIC."""
+        """Yields the results of sampling with and without QUIC.
+
+        When save_all_sources is False, only the source of the first repetition
+        will be provided.
+        """
         failed = ''
 
         for repetition in range(1, repetitions + 1):
-            quic_sample = self.sample(domain, use_quic=True)
+            with_source = keep_sources == 'all' or (
+                keep_sources == 'first' and repetition == 1)
+
+            quic_sample = self.sample(
+                domain, use_quic=True, with_source=with_source)
             failed += '' if quic_sample['status'] == 'success' else 'QUIC'
             yield quic_sample
 
-            tcp_sample = self.sample(domain, use_quic=False)
+            tcp_sample = self.sample(
+                domain, use_quic=False, with_source=with_source)
             failed += '' if tcp_sample['status'] == 'success' else (
                 ' and TCP' if failed is not None else 'TCP')
             yield tcp_sample
@@ -295,7 +315,9 @@ class WebsiteTraceExperiment:
                     repetition, domain, failed)
                 return
 
-    def sample(self, domain: Domain, use_quic: bool) -> Result:
+    def sample(
+        self, domain: Domain, use_quic: bool, with_source: bool = True
+    ) -> Result:
         """Fetch the domain and returns the result."""
         page_source = None
         status: Literal['success', 'timeout', 'failure'] = 'success'
@@ -317,6 +339,9 @@ class WebsiteTraceExperiment:
                 status = 'failure'
             finally:
                 self._sniffer.stop()
+
+            if not with_source:
+                page_source = None
 
             return dict(page_source=page_source, status=status,
                         domain=domain, with_quic=use_quic,
