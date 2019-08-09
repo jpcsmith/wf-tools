@@ -112,6 +112,7 @@ class ChromiumFactory(WebDriverFactory):
         # Force or disable QUIC
         if quic_domain is not None:
             options.add_argument('--enable-quic')
+            options.add_argument('--quic-version=QUIC_VERSION_43')
             options.add_argument('--origin-to-force-quic-on={}'.format(
                 quic_domain.with_port(443)))
         else:
