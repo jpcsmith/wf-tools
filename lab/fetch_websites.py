@@ -156,7 +156,14 @@ class ChromiumSession:
 
     def close(self) -> None:
         """Ends the session."""
-        self._driver.close()
+        try:
+            self._driver.quit()
+        except WebDriverException as err:
+            if 'failed to close window in' not in err.msg:
+                raise
+            self._logger.warning(
+                "Error '%s' suppressed on driver quit.", err.msg)
+
         self._driver = None
         self._logger.info('Session for %s closed', self._domain)
 
