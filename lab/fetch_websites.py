@@ -49,7 +49,7 @@ class Domain:
     name: str
 
     def __post_init__(self):
-        assert 'www' not in self.name and 'http' not in self.name
+        assert not self.name.startswith(('http://', 'https://'))
 
     def as_https_url(self) -> str:
         """Returns the https url for the domain, e.g. https://example.com"""
