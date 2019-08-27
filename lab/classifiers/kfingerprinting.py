@@ -15,6 +15,8 @@ from typing import (
 )
 
 import numpy as np
+import pandas as pd
+from pandas.core.groupby import DataFrameGroupBy
 
 
 EncPacket = NamedTuple(
@@ -95,6 +97,20 @@ def head_tail_concentration(trace: Trace, length: int = 30) \
             sum(not pkt.incoming for pkt in trace[:length]),
             sum(pkt.incoming for pkt in trace[-length:]),
             sum(not pkt.incoming for pkt in trace[-length:]))
+
+
+def _bin_trace(trace: pd.DataFrame, bin_size: int) -> DataFrameGroupBy:
+    trace['group'] = np.arange(len(trace)) // bin_size
+    return trace.groupby('group')
+
+
+def outgoing_concentration_stats(trace: pd.DataFrame, bin_size: int = 20):
+    """Compute statistics over the number of outgoing packets in each 20 packet
+    interval.
+    """
+    frame = trace.copy()
+    frame['outgoing'] = 1 - frame['incoming']
+    return _bin_trace(frame, bin_size)['outgoing'].sum().describe()
 
 
 def extract_features(trace: Trace) -> np.ndarray:

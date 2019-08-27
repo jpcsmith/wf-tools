@@ -1,7 +1,14 @@
 """Tests for lab.classifiers.kfingerprinting."""
 # pylint: disable=redefined-outer-name
+from math import sqrt
+from typing import (
+    Iterable,
+    Tuple,
+)
+
 import pytest
 from pytest import approx
+import pandas as pd
 
 from lab.classifiers.kfingerprinting import (
     interarrival_stats,
@@ -10,6 +17,7 @@ from lab.classifiers.kfingerprinting import (
     EncPacket,
     Trace,
     head_tail_concentration,
+    outgoing_concentration_stats,
 )
 
 
@@ -40,6 +48,23 @@ def outgoing_trace():
         EncPacket(0.6, 900, incoming=False),
         EncPacket(1.0, 1500, incoming=False),
     ]
+
+
+def make_trace(packets: Iterable[Tuple[float, int, bool]]) -> pd.DataFrame:
+    """Create a dataframe containing the provided packets."""
+    return pd.DataFrame.from_records(
+        packets, columns=['timestamp', 'size', 'incoming'])
+
+
+@pytest.fixture
+def long_trace():
+    """Returns a long trace of both input and output packets."""
+    return make_trace([
+        (0.0, 1000, False), (0.1, 900, True), (0.2, 1500, False),
+        (0.3, 1000, False), (0.4, 900, True), (0.10, 1000, False),
+        (0.11, 900, True), (0.12, 1500, True), (0.13, 1000, True),
+        (0.14, 900, True), (0.20, 1500, True), (0.21, 1000, False),
+        (0.22, 900, False), (0.23, 1500, True), (0.24, 1500, True)])
 
 
 class TestInterarrivalStats:
@@ -144,3 +169,23 @@ class TestHeadTailConcentration:
         (0, outgoing, outgoing) since there are no incoming packets.
         """
         assert head_tail_concentration(outgoing_trace, length=2) == (0, 2, 0, 2)
+
+
+class TestOutgoingConcentrationStats:
+    """Test cases for the outgoing_concentration_stats."""
+    @staticmethod
+    def test_empty_trace(empty_trace: Trace):
+        pass
+
+    @staticmethod
+    def test_mixed_trace(long_trace: Trace):
+        """It should compute the summary stats over bins of size 5 from the
+        long trace.
+        """
+        result = outgoing_concentration_stats(long_trace, bin_size=5)
+        print(result)
+        assert result['min'] == 1
+        assert result['max'] == 3
+        assert result['50%'] == 2
+        assert result['mean'] == 2
+        assert result['std'] == 1
