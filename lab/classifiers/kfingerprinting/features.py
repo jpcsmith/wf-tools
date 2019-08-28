@@ -4,7 +4,8 @@
     scalable website fingerprinting technique." 25th {USENIX} Security
     Symposium ({USENIX} Security 16). 2016.
 
-Minor adjustments to the work of the original authors from the paper.
+Minor adjustments to the work of the original authors from the paper. The
+original can be found at https://github.com/jhayes14/k-FP.
 """
 import math
 from typing import (
