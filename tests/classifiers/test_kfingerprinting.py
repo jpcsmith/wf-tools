@@ -13,6 +13,7 @@ from pandas.api.types import CategoricalDtype
 from lab.classifiers.kfingerprinting import (
     interarrival_stats,
     timestamp_percentiles,
+    packet_counts,
 )
 
 
@@ -116,7 +117,8 @@ class TestTimestampPercentiles:
 
         assert list(percentiles.loc['in']) == approx([0.2, 0.3, 0.9, 1.5])
         assert list(percentiles.loc['out']) == approx([0.3, 0.6, 0.8, 1])
-        assert list(percentiles.loc['both']) == approx([0.15, 0.45, 0.9, 1.5], 1e-3)
+        assert list(percentiles.loc['both']) == approx(
+            [0.15, 0.45, 0.9, 1.5], 1e-3)
 
     @staticmethod
     def test_outgoing_trace(outgoing_trace):
@@ -132,27 +134,30 @@ class TestTimestampPercentiles:
         assert list(percentiles.loc['both']) == approx([0.3, 0.6, 0.8, 1])
 
 
-# class TestPacketCounts:
-#     """Test cases for the timestamp_percentile feature set."""
-#     @staticmethod
-#     def test_empty_trace(empty_trace: Trace):
-#         """It should return a feature set of 3 zeroes."""
-#         assert packet_counts(empty_trace) == (0, 0, 0)
-#
-#     @staticmethod
-#     def test_mixed_trace(mixed_trace: Trace):
-#         """It should return the number of packets in the
-#         (incoming, outgoing, entire) subtraces.
-#         """
-#         assert packet_counts(mixed_trace) == (3, 3, 6)
-#
-#     @staticmethod
-#     def test_outgoing_trace(outgoing_trace: Trace):
-#         """It should return the number of packets in the
-#         (incoming, outgoing, entire) subtraces, with the form
-#         (0, outgoing, outgoing) since there are no incoming packets.
-#         """
-#         assert packet_counts(outgoing_trace) == (0, 3, 3)
+class TestPacketCounts:
+    """Test cases for the timestamp_percentile feature set."""
+    @staticmethod
+    def test_mixed_trace(mixed_trace: pd.DataFrame):
+        """It should return the number of packets in the
+        (incoming, outgoing, entire) subtraces.
+        """
+        result = packet_counts(mixed_trace)
+
+        assert result.loc['in'] == 3
+        assert result.loc['out'] == 3
+        assert result.loc['both'] == 6
+
+    @staticmethod
+    def test_outgoing_trace(outgoing_trace: pd.DataFrame):
+        """It should return the number of packets in the
+        (incoming, outgoing, entire) subtraces, with the form
+        (0, outgoing, outgoing) since there are no incoming packets.
+        """
+        result = packet_counts(outgoing_trace)
+
+        assert result.loc['in'] == 0
+        assert result.loc['out'] == 3
+        assert result.loc['both'] == 3
 #
 #
 # class TestHeadTailConcentration:

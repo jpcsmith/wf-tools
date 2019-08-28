@@ -66,11 +66,12 @@ def timestamp_percentiles(trace: pd.DataFrame) -> pd.DataFrame:
     return percentiles.append(_quantiles(trace['timestamp']).rename('both'))
 
 
-# def packet_counts(trace: Trace) -> Tuple[int, int, int]:
-#     """Returns the number of incoming, outgoing and total number of packets."""
-#     return (sum(pkt.incoming for pkt in trace),
-#             sum(not pkt.incoming for pkt in trace),
-#             len(trace))
+def packet_counts(trace: pd.DataFrame) -> pd.Series:
+    """Returns the number of incoming, outgoing and total number of packets."""
+    counts = trace.groupby('direction', observed=False)['timestamp'].count()
+    counts['both'] = len(trace)
+    return counts
+
 #
 #
 # def head_tail_concentration(trace: Trace, length: int = 30) \
