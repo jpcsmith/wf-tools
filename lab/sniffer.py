@@ -2,6 +2,7 @@
 import io
 import time
 import logging
+import threading
 
 import scapy
 import scapy.plist
@@ -9,15 +10,28 @@ import scapy.sendrecv
 import scapy.utils
 
 
+class SnifferStartTimeout(Exception):
+    """Raised when the sniffer fails to start due to a timeout."""
+
+
 class PacketSniffer:
     """Class for capturing network traffic."""
-    start_delay = 1
     stop_delay = 1
 
     def __init__(self, capture_filter: str = 'tcp or udp port 443'):
+        def _started_callback():
+            with self._start_condition:
+                self._started = True
+                self._start_condition.notify_all()
+
         self._logger = logging.getLogger(__name__)
         self._filter = capture_filter
-        self._sniffer = scapy.sendrecv.AsyncSniffer(filter=capture_filter)
+        self._start_condition = threading.Condition()
+        self._started = False
+        self._sniffer = scapy.sendrecv.AsyncSniffer(
+            filter=capture_filter,
+            started_callback=_started_callback
+        )
 
     @property
     def results(self) -> bytes:
@@ -39,13 +53,15 @@ class PacketSniffer:
 
     def start(self) -> None:
         """Start capturing packets."""
-        self._sniffer.start()
+        with self._start_condition:
+            self._sniffer.start()
+            notified = self._start_condition.wait_for(
+                lambda: self._started, timeout=5)
+
+        if not notified:
+            raise SnifferStartTimeout()
         self._logger.info('Began sniffing for traffic with filter "%s"',
                           self._filter)
-
-        self._logger.info('Waiting %.2fs for sniffer to initialise',
-                          self.start_delay)
-        time.sleep(self.start_delay)
 
     def stop(self) -> None:
         """Stop capturing packets."""
