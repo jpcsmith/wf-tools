@@ -18,21 +18,11 @@ from typing_extensions import Literal, Final
 
 import numpy as np
 
-
-class Packet(NamedTuple):
-    """A packet in the trace.
-
-    An outgoing packet has a direction of 1 and an incoming packet has a
-    direction of -1. The size of the packet is in bytes.
-    """
-    timestamp: float
-    direction: Literal[1, -1]
-    size: int
-
-
-OUT: Literal[1] = 1
-IN: Literal[-1] = -1
-Trace = List[Packet]
+from lab.trace import (
+    Packet,
+    Direction,
+    Trace
+)
 
 
 # ----------------
