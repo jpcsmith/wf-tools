@@ -12,6 +12,8 @@ from typing import (
 )
 
 import scapy.utils
+# Bug fix for rdpcap, see scapy.ml.secdev.narkive.com/h0rkmsiG/bug-in-rdpcap
+from scapy.all import Raw  # pylint: disable=unused-import
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,5 +134,6 @@ def pcap_to_trace(pcap: bytes) -> Trace:
         ip_layer = packet['IP']
         direction = Direction.OUT if ip_layer.src == client else Direction.IN
         trace.append(Packet(packet.time, direction, ip_layer.len))
-    _LOGGER.info("pcap coversnion resulted in %d trace packets.", len(trace))
+    _LOGGER.info("pcap conversion resulted in %d trace packets, %d in pcap.",
+                 len(trace), len(packets))
     return trace
