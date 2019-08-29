@@ -3,6 +3,11 @@ import io
 import logging
 from decimal import Decimal
 from enum import IntEnum
+from ipaddress import (
+    IPv4Network,
+    IPv6Network,
+    ip_address,
+)
 from typing import (
     Iterator,
     Iterable,
@@ -10,6 +15,7 @@ from typing import (
     NamedTuple,
     Set,
     Optional,
+    Union,
 )
 
 import scapy.utils
@@ -38,6 +44,7 @@ class Packet(NamedTuple):
 
 
 Trace = List[Packet]
+IPNetworkType = Union[IPv4Network, IPv6Network]
 
 
 class ClientIndeterminable(Exception):
@@ -50,7 +57,8 @@ def _ip_layers(packets: Iterable) -> Iterator:
     return (pkt.getlayer('IP') for pkt in packets if pkt.haslayer('IP'))
 
 
-def _common_ip(packets: Iterable) -> Optional[str]:
+def _common_ip(packets: Iterable, client_subnet: Optional[IPNetworkType]) \
+        -> Optional[str]:
     """Attempts to identify an IP common to all packets. Assumes that the
     capture was not made in promiscuous mode, and thus all packets were either
     from or directed to the endpoint. Returns None if it does not find a
@@ -70,6 +78,13 @@ def _common_ip(packets: Iterable) -> Optional[str]:
 
     if common_ip and len(common_ip) == 1:
         return common_ip.pop()
+
+    if common_ip and len(common_ip) == 2 and client_subnet:
+        if not all(ip_address(ip) in client_subnet for ip in common_ip):
+            # Exactly zero or one is in the subnet
+            for ip_addr in common_ip:
+                if ip_address(ip_addr) in client_subnet:
+                    return ip_addr
 
     if common_ip is None:
         _LOGGER.debug("Common IP set never initialised, were there packets?")
@@ -118,8 +133,10 @@ class PcapToTraceConverter:
     """Converts pcaps to `Trace`s. Allows caching the client IP address between
     traces to recover from failed client IP deductions.
     """
-    def __init__(self, cache_client_ip: bool = False):
+    def __init__(self, cache_client_ip: bool = False,
+                 client_subnet: Optional[IPNetworkType] = None):
         self.cache_client_ip = cache_client_ip
+        self.client_subnet = client_subnet
         self._cache: Set[str] = set()
 
     @property
@@ -127,9 +144,9 @@ class PcapToTraceConverter:
         """The read-only cache of previously seen client IP addresses."""
         return self._cache
 
-    def add_to_cache(self, ip_address: str) -> None:
-        """Adds the provided ip_address to the cache."""
-        self._cache.add(ip_address)
+    def add_to_cache(self, ip_addr: str) -> None:
+        """Adds the provided ip_addr to the cache."""
+        self._cache.add(ip_addr)
 
     def _client_from_cache(self, packets: Iterable) -> Optional[str]:
         is_present = {client: False for client in self.cache}
@@ -154,7 +171,8 @@ class PcapToTraceConverter:
         Raises ClientIndeterminable on failure.
         """
         packet_list = list(packets)
-        client = _common_ip(packet_list) or _syn_originator(packet_list)
+        client = (_common_ip(packet_list, self.client_subnet)
+                  or _syn_originator(packet_list))
 
         if client and self.cache_client_ip:
             self.add_to_cache(client)
