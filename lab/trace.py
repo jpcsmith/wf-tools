@@ -182,6 +182,6 @@ class PcapToTraceConverter:
                 zero_time = packet.time
             timestamp = float(packet.time - zero_time)
             trace.append(Packet(timestamp, direction, ip_layer.len))
-        _LOGGER.info("pcap conversion has %d trace packets, %d in pcap.",
-                     len(trace), len(packets))
+        _LOGGER.debug("pcap conversion has %d trace packets, %d in pcap.",
+                      len(trace), len(packets))
         return trace
