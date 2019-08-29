@@ -1,6 +1,7 @@
 """Utilities and definitions relating to packet traces."""
 import io
 import logging
+from decimal import Decimal
 from enum import IntEnum
 from typing import (
     Iterator,
@@ -103,37 +104,84 @@ def _syn_originator(packets: Iterable) -> Optional[str]:
     return None
 
 
-def _determine_client_ip(packets: Iterable) -> str:
-    """Determines the IP address of the client from the sequence of packets.
-
-    Raises ClientIndeterminable on failure.
-    """
-    packet_list = list(packets)
-    client = _common_ip(packet_list) or _syn_originator(packet_list)
-    if not client:
-        raise ClientIndeterminable("Unable to determine client from trace.")
-    return client
+def _has_endpoint(ip_layer, client: str) -> bool:
+    return client in (ip_layer.src, ip_layer.dst)
 
 
 def _packets_with_endpoint(packets: Iterable, client: str) -> Iterator:
-    def _has_endpoint(ip_layer, client: str) -> bool:
-        return client in (ip_layer.src, ip_layer.dst)
-
     for packet in packets:
         if packet.haslayer('IP') and _has_endpoint(packet['IP'], client):
             yield packet
 
 
-def pcap_to_trace(pcap: bytes) -> Trace:
-    """Converts a pcap to a packet trace."""
-    packets = scapy.utils.rdpcap(io.BytesIO(pcap))
-    client = _determine_client_ip(packets)
+class PcapToTraceConverter:
+    """Converts pcaps to `Trace`s. Allows caching the client IP address between
+    traces to recover from failed client IP deductions.
+    """
+    def __init__(self, cache_client_ip: bool = False):
+        self.cache_client_ip = cache_client_ip
+        self._cache: Set[str] = set()
 
-    trace: Trace = []
-    for packet in _packets_with_endpoint(packets, client):
-        ip_layer = packet['IP']
-        direction = Direction.OUT if ip_layer.src == client else Direction.IN
-        trace.append(Packet(packet.time, direction, ip_layer.len))
-    _LOGGER.info("pcap conversion resulted in %d trace packets, %d in pcap.",
-                 len(trace), len(packets))
-    return trace
+    @property
+    def cache(self) -> Set[str]:
+        """The read-only cache of previously seen client IP addresses."""
+        return self._cache
+
+    def add_to_cache(self, ip_address: str) -> None:
+        """Adds the provided ip_address to the cache."""
+        self._cache.add(ip_address)
+
+    def _client_from_cache(self, packets: Iterable) -> Optional[str]:
+        is_present = {client: False for client in self.cache}
+
+        for client in self.cache:
+            is_present[client] = any(_has_endpoint(ip_layer, client)
+                                     for ip_layer in _ip_layers(packets))
+
+        result = [client for client in self.cache if is_present[client]]
+        if len(result) == 1:
+            return result[0]
+
+        if not result:
+            _LOGGER.debug("No IPs from cache %s in trace.", self.cache)
+        else:
+            _LOGGER.debug("Multiple IPs from cache %s in trace.", self.cache)
+        return None
+
+    def _determine_client_ip(self, packets: Iterable) -> str:
+        """Determines the IP address of the client from the sequence of packets.
+
+        Raises ClientIndeterminable on failure.
+        """
+        packet_list = list(packets)
+        client = _common_ip(packet_list) or _syn_originator(packet_list)
+
+        if client and self.cache_client_ip:
+            self.add_to_cache(client)
+        elif not client and self.cache_client_ip:
+            client = self._client_from_cache(packets)
+
+        if not client:
+            raise ClientIndeterminable("Unable to determine client from trace.")
+        _LOGGER.debug("Client determined to be %s.", client)
+        return client
+
+    def to_trace(self, pcap: bytes) -> Trace:
+        """Converts a pcap to a packet trace."""
+        packets = scapy.utils.rdpcap(io.BytesIO(pcap))
+        client = self._determine_client_ip(packets)
+
+        trace: Trace = []
+        zero_time: Optional[Decimal] = None
+
+        for packet in _packets_with_endpoint(packets, client):
+            ip_layer = packet['IP']
+            direction = (Direction.OUT if ip_layer.src == client
+                         else Direction.IN)
+            if zero_time is None:
+                zero_time = packet.time
+            timestamp = float(packet.time - zero_time)
+            trace.append(Packet(timestamp, direction, ip_layer.len))
+        _LOGGER.info("pcap conversion has %d trace packets, %d in pcap.",
+                     len(trace), len(packets))
+        return trace

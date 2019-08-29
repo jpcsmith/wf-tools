@@ -40,7 +40,7 @@ def neighborhood(iterable):
 
 
 def chunkIt(seq, num):
-    avg = len(seq) / float(num)
+    avg = len(seq) / num
     out = []
     last = 0.0
     while last < len(seq):
@@ -86,22 +86,22 @@ def interarrival_maxminmeansd_stats(list_data):
     interstats = []
     In, Out, Total = interarrival_times(list_data)
     if In and Out:
-        avg_in = sum(In)/float(len(In))
-        avg_out = sum(Out)/float(len(Out))
-        avg_total = sum(Total)/float(len(Total))
+        avg_in = sum(In)/len(In)
+        avg_out = sum(Out)/len(Out)
+        avg_total = sum(Total)/len(Total)
         interstats.append((max(In), max(Out), max(Total), avg_in, avg_out,
                            avg_total, np.std(In), np.std(Out), np.std(Total),
                            np.percentile(In, 75), np.percentile(Out, 75),
                            np.percentile(Total, 75)))
     elif Out and not In:
-        avg_out = sum(Out)/float(len(Out))
-        avg_total = sum(Total)/float(len(Total))
+        avg_out = sum(Out)/len(Out)
+        avg_total = sum(Total)/len(Total)
         interstats.append((0, max(Out), max(Total), 0, avg_out, avg_total, 0,
                            np.std(Out), np.std(Total), 0,
                            np.percentile(Out, 75), np.percentile(Total, 75)))
     elif In and not Out:
-        avg_in = sum(In)/float(len(In))
-        avg_total = sum(Total)/float(len(Total))
+        avg_in = sum(In)/len(In)
+        avg_total = sum(Total)/len(Total)
         interstats.append((max(In), 0, max(Total), avg_in, 0, avg_total,
                            np.std(In), 0, np.std(Total), np.percentile(In, 75),
                            0, np.percentile(Total, 75)))
@@ -181,7 +181,7 @@ def pkt_concentration_stats(Total: Trace):
                 c += 1
         concentrations.append(c)
     return (np.std(concentrations),
-            sum(concentrations)/float(len(concentrations)),
+            sum(concentrations)/len(concentrations),
             np.percentile(concentrations, 50), min(concentrations),
             max(concentrations), concentrations)
 
@@ -201,7 +201,7 @@ def number_per_sec(Total: Trace):
     for prev, item, _ in neighborhood(temp):
         x = item - prev
         l.append(x)
-    avg_number_per_sec = sum(l)/float(len(l))
+    avg_number_per_sec = sum(l)/len(l)
     return (avg_number_per_sec, np.std(l), np.percentile(l, 50), min(l),
             max(l), l)
 
@@ -221,16 +221,16 @@ def avg_pkt_ordering_stats(Total: Trace):
         if p[1] == -1:
             temp2.append(c2)
         c2 += 1
-    avg_in = sum(temp1)/float(len(temp1))
-    avg_out = sum(temp2)/float(len(temp2))
+    avg_in = sum(temp1)/len(temp1)
+    avg_out = sum(temp2)/len(temp2)
 
     return avg_in, avg_out, np.std(temp1), np.std(temp2)
 
 
 def perc_inc_out(Total: Trace):
     In, Out = In_Out(Total)
-    percentage_in = len(In)/float(len(Total))
-    percentage_out = len(Out)/float(len(Total))
+    percentage_in = len(In)/len(Total)
+    percentage_out = len(Out)/len(Total)
     return percentage_in, percentage_out
 
 
@@ -239,6 +239,7 @@ def perc_inc_out(Total: Trace):
 # ----------------
 # If size information available add them in to function below
 def extract_features(trace: Trace, max_size: int = 175) -> Tuple[float, ...]:
+    assert trace[0].timestamp == 0
     all_features = []
 
     # ------TIME--------
@@ -248,6 +249,7 @@ def extract_features(trace: Trace, max_size: int = 175) -> Tuple[float, ...]:
     thirtypkts = first_and_last_30_pkts_stats(trace)
     stdconc, avgconc, medconc, minconc, maxconc, conc = \
         pkt_concentration_stats(trace)
+
     avg_per_sec, std_per_sec, med_per_sec, min_per_sec, max_per_sec, per_sec = \
         number_per_sec(trace)
     avg_order_in, avg_order_out, std_order_in, std_order_out = \
