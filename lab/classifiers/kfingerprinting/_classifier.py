@@ -11,8 +11,10 @@ from typing import (
     Optional,
     Iterable,
     TypeVar,
+    Any,
 )
 
+import pandas as pd
 import scipy.spatial.distance
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
@@ -23,8 +25,6 @@ from sklearn.base import (
 
 
 Element = TypeVar('Element')
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def _unique_element(items: Iterable[Element]) -> Optional[Element]:
@@ -60,6 +60,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     Symposium ({USENIX} Security 16). 2016.
     """
     def __init__(self, forest: RandomForestClassifier, n_neighbours: int = 3):
+        self._logger = logging.getLogger(__name__)
         self.forest = forest
         self.n_neighbours = n_neighbours
         self._graph: Optional[NearestNeighbors] = None
@@ -67,85 +68,37 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
     def fit(self, X, y):  # pylint: disable=invalid-name
         """Fit the estimator according to the given training data."""
+        self._logger.info("Fitting the random forest on %d samples.", len(X))
         self.forest.fit(X, y)
+
         self._graph = NearestNeighbors(
-            n_neighbours=self.n_neighbours,
+            n_neighbors=self.n_neighbours,
             metric=scipy.spatial.distance.hamming,
             n_jobs=self.forest.n_jobs)
+        self._logger.info("Fitting the nearest neighbor graph.")
         self._graph.fit(self.forest.apply(X))
-        self._labels = y
+        self._labels = pd.Series(y)
+        self._logger.info("Model fitting complete.")
 
-    def predict(self, X):  # pylint: disable=invalid-name
+    def predict(self, X, unknown_label: Any = 'unknown'):  # pylint: disable=invalid-name
         """Predict the class for X.
 
         The predicted class is the unanimous label of the k-closest neighbours
         or None.
         """
         assert self._graph is not None
-        neighbourhoods = self._graph.kneighbors(X, return_distance=False)
+        assert self._labels is not None
+        self._logger.debug("Determining leaves for the prediction.")
+        leaves = self.forest.apply(X)
+        self._logger.debug("Identifying neighbours of the leaves.")
+        neighbourhoods = self._graph.kneighbors(leaves, return_distance=False)
         result = []
+        self._logger.debug("Formulating decision.")
         for neighbours_list in neighbourhoods:
-            labels = [self._labels[index] for index in neighbours_list]
-            result.append(_unique_element(labels))
+            # breakpoint()
+            labels = [self._labels.iloc[index] for index in neighbours_list]
+            prediction = _unique_element(labels)
+            # Explicitly check for None since 0/False are valid predictions
+            result.append(prediction if prediction is not None
+                          else unknown_label)
         return result
-
-
-# @dataclass
-# class Config:
-#     """Classifier configuration."""
-#     fg_train_size: Union[float, int] = 0.6
-#     bg_train_size: Union[float, int] = 5000
-#     num_trees: int = 1000
-#
-#
-# # A dataset has 3 index columns, a bool column 'foreground', a unique index and
-# # 'protocol' being 'quic' or 'tcp'
-#
-# def _stratified_split(dataset: pd.DataFrame, train_size: Union[float, int],
-#                       random_state: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-#     """Split the dataset into training and testing dataframes."""
-#     splitter = StratifiedShuffleSplit(n_splits=1, train_size=train_size,
-#                                       random_state=random_state)
-#     train_index, test_index = next(
-#         splitter.split(dataset.drop(columns='label'), dataset['label']))
-#
-#     return dataset[train_index], dataset[test_index]
-#
-#
-# def openworld_leaves(dataset: pd.DataFrame, config: Optional[Config] = None,
-#                      random_state: int = 42):
-#     """Produces the leaf vectors used for classification."""
-#     config = config or Config()
-#
-#
-#
-#     fg_train, fg_test = _stratified_split(fg_dataset, fg_train_size,
-#                                           random_state)
-#     _LOGGER.info("Split the foreground class into train and test sets of %d "
-#                  "and %d rows respectively.", len(fg_train), len(fg_test))
-#
-#     bg_train, bg_test = _stratified_split(bg_dataset, bg_train_size,
-#                                           random_state)
-#     _LOGGER.info("Split the background class into train and test sets of %d "
-#                  "and %d rows respectively.", len(bg_train), len(bg_test))
-#
-#     train = bg_train.append(fg_train, ignore_index=True)
-#     test = bg_test.append(fg_test, ignore_index=True)
-#
-#     _LOGGER.info("Planting a random forest...")
-#     model = RandomForestClassifier(n_estimators=n_trees, oob_score=True,
-#                                    n_jobs=-1)
-#     model.fit(train.drop(columns='label'), train['label'])
-#     _LOGGER.info("Planting complete.")
-#
-#     train_leaf = pd.DataFrame(model.apply(train.drop(columns='label')),
-#                               index=train.index)
-#     train_leaf['label'] = train['label']
-#     _LOGGER.debug("Training leaves %s", train_leaf)
-#
-#     test_leaf = pd.DataFrame(model.apply(test.drop(columns='label')),
-#                              index=test.index)
-#     test_leaf['label'] = test['label']
-#     _LOGGER.debug("Testing leaves %s", test_leaf)
-#
-#     return train_leaf, test_leaf
