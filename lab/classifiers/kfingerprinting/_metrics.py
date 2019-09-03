@@ -7,6 +7,23 @@ from typing import (
 BinarySequence = Sequence[int]
 
 
+def false_positive_rate(y_true: Sequence, y_pred: Sequence) -> float:
+    """Calculates the false positive rate binary classification results.
+    Assumes that the negative class is -1.
+    """
+    assert set(y_true).issubset({1, -1})
+    assert set(y_pred).issubset({1, -1})
+
+    false_positives = 0
+    true_negatives = 0
+    for true_label, predicted_label in zip(y_true, y_pred):
+        if true_label == -1 and predicted_label == 1:
+            false_positives += 1
+        elif true_label == predicted_label == -1:
+            true_negatives += 1
+    return false_positives / (false_positives + true_negatives)
+
+
 def make_binary(y_true: Sequence, y_pred: Sequence, neg_label,
                 strict: bool = False) -> Tuple[BinarySequence, BinarySequence]:
     """Converts the multiclass ground truth and predictions into binary
@@ -18,7 +35,7 @@ def make_binary(y_true: Sequence, y_pred: Sequence, neg_label,
     label which is predicted as another positive label is still considered
     correct.
 
-    Returns (y'_true, y'_pred)
+    Returns (y_true´, y_pred´)
     """
     def _map_predicted(true_label, pred_label) -> int:
         if true_label == pred_label:

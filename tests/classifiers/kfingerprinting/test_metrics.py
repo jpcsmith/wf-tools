@@ -1,7 +1,7 @@
 """Tests related to the metrics in kfingerprinting."""
 import pytest
 
-from lab.classifiers.kfingerprinting import make_binary
+from lab.classifiers.kfingerprinting import make_binary, false_positive_rate
 
 
 @pytest.mark.parametrize('strict', [True, False])
@@ -31,3 +31,10 @@ def test_make_binary_strict():
         neg_label='background', strict=True)
     assert binary_true == [1, -1, 1, -1]
     assert binary_pred == [1, -1, -1, 1]
+
+
+def test_false_positive_rate():
+    """It should correctly report the false positive rate."""
+    rate = false_positive_rate(y_true=[1, 1, -1, -1, -1, -1, -1],
+                               y_pred=[1, -1, -1, 1, 1, -1, 1])
+    assert rate == 0.6
