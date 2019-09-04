@@ -52,15 +52,11 @@ def chunkIt(seq, num):
 # --------------------
 # Non-feeder functions
 # --------------------
-def In_Out(list_data):
-    In = []
-    Out = []
-    for p in list_data:
-        if p[1] == -1:
-            In.append(p)
-        if p[1] == 1:
-            Out.append(p)
-    return In, Out
+def split_in_out(list_data: Trace) -> Tuple[Trace, Trace]:
+    """Returns a tuple of the packets in the (incoming, outgoing) subtraces."""
+    incoming = [pkt for pkt in list_data if pkt.direction == Direction.IN]
+    outgoing = [pkt for pkt in list_data if pkt.direction == Direction.OUT]
+    return (incoming, outgoing)
 
 
 # -------------
@@ -75,14 +71,14 @@ def inter_pkt_time(list_data):
 
 
 def interarrival_times(list_data):
-    In, Out = In_Out(list_data)
+    In, Out = split_in_out(list_data)
     IN = inter_pkt_time(In)
     OUT = inter_pkt_time(Out)
     TOTAL = inter_pkt_time(list_data)
     return IN, OUT, TOTAL
 
 
-def interarrival_maxminmeansd_stats(list_data):
+def interarrival_maxminmeansd_stats(list_data: Trace):
     interstats = []
     In, Out, Total = interarrival_times(list_data)
     if In and Out:
@@ -111,7 +107,7 @@ def interarrival_maxminmeansd_stats(list_data):
 
 
 def time_percentile_stats(Total: Trace):
-    In, Out = In_Out(Total)
+    In, Out = split_in_out(Total)
     In1 = [x[0] for x in In]
     Out1 = [x[0] for x in Out]
     Total1 = [x[0] for x in Total]
@@ -141,7 +137,7 @@ def time_percentile_stats(Total: Trace):
 
 
 def number_pkt_stats(Total: Trace):
-    In, Out = In_Out(Total)
+    In, Out = split_in_out(Total)
     return len(In), len(Out), len(Total)
 
 
@@ -228,7 +224,7 @@ def avg_pkt_ordering_stats(Total: Trace):
 
 
 def perc_inc_out(Total: Trace):
-    In, Out = In_Out(Total)
+    In, Out = split_in_out(Total)
     percentage_in = len(In)/len(Total)
     percentage_out = len(Out)/len(Total)
     return percentage_in, percentage_out
