@@ -9,18 +9,20 @@ from ipaddress import (
     ip_address,
 )
 from typing import (
-    Iterator,
+    Dict,
     Iterable,
+    Iterator,
     List,
     NamedTuple,
-    Set,
     Optional,
+    Set,
     Union,
 )
 
 import scapy.utils
 # Bug fix for rdpcap, see scapy.ml.secdev.narkive.com/h0rkmsiG/bug-in-rdpcap
 from scapy.all import Raw  # pylint: disable=unused-import
+import pandas as pd
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -138,6 +140,8 @@ class PcapToTraceConverter:
         self.cache_client_ip = cache_client_ip
         self.client_subnet = client_subnet
         self._cache: Set[str] = set()
+        self._ip_stats: Dict['str', int] = {}
+        self._packet_stats: Dict['str', List[int]] = {'pcap': [], 'trace': []}
 
     @property
     def cache(self) -> Set[str]:
@@ -181,7 +185,8 @@ class PcapToTraceConverter:
 
         if not client:
             raise ClientIndeterminable("Unable to determine client from trace.")
-        _LOGGER.debug("Client determined to be %s.", client)
+
+        self._ip_stats[client] = self._ip_stats.get(client, 0) + 1
         return client
 
     def to_trace(self, pcap: bytes) -> Trace:
@@ -200,6 +205,14 @@ class PcapToTraceConverter:
                 zero_time = packet.time
             timestamp = float(packet.time - zero_time)
             trace.append(Packet(timestamp, direction, ip_layer.len))
-        _LOGGER.debug("pcap conversion has %d trace packets, %d in pcap.",
-                      len(trace), len(packets))
+        self._packet_stats['pcap'].append(len(packets))
+        self._packet_stats['trace'].append(len(trace))
         return trace
+
+    def ip_stats(self) -> Dict['str', int]:
+        """Returns the counts of deduced client IPs."""
+        return self._ip_stats
+
+    def packet_stats(self) -> pd.DataFrame:
+        """Returns summary statistics of the packet sizes."""
+        return pd.DataFrame(self._packet_stats).describe().transpose()
