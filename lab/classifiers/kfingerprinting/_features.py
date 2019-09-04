@@ -10,16 +10,12 @@ original can be found at https://github.com/jhayes14/k-FP.
 import math
 from typing import (
     Tuple,
-    NamedTuple,
-    List,
     Union,
 )
-from typing_extensions import Literal, Final
 
 import numpy as np
 
 from lab.trace import (
-    Packet,
     Direction,
     Trace
 )
@@ -230,11 +226,62 @@ def perc_inc_out(Total: Trace):
     return percentage_in, percentage_out
 
 
+def total_size(list_data):
+    return sum(x.size for x in list_data)
+
+
+def in_out_size(list_data):
+    In, Out = split_in_out(list_data)
+    size_in = sum(x.size for x in In)
+    size_out = sum(x.size for x in Out)
+    return size_in, size_out
+
+
+def average_total_pkt_size(list_data):
+    return np.mean([x.size for x in list_data])
+
+
+def average_in_out_pkt_size(list_data):
+    In, Out = split_in_out(list_data)
+    average_size_in = np.mean([x.size for x in In])
+    average_size_out = np.mean([x.size for x in Out])
+    return average_size_in, average_size_out
+
+
+def variance_total_pkt_size(list_data):
+    return np.var([x.size for x in list_data])
+
+
+def variance_in_out_pkt_size(list_data):
+    In, Out = split_in_out(list_data)
+    var_size_in = np.var([x.size for x in In])
+    var_size_out = np.var([x.size for x in Out])
+    return var_size_in, var_size_out
+
+
+def std_total_pkt_size(list_data):
+    return np.std([x.size for x in list_data])
+
+
+def std_in_out_pkt_size(list_data):
+    In, Out = split_in_out(list_data)
+    std_size_in = np.std([x.size for x in In])
+    std_size_out = np.std([x.size for x in Out])
+    return std_size_in, std_size_out
+
+
+def max_in_out_pkt_size(list_data):
+    In, Out = split_in_out(list_data)
+    max_size_in = max([x.size for x in In])
+    max_size_out = max([x.size for x in Out])
+    return max_size_in, max_size_out
+
+
 # ----------------
 # FEATURE FUNCTION
 # ----------------
 # If size information available add them in to function below
-def extract_features(trace: Trace, max_size: int = 175) -> Tuple[float, ...]:
+def extract_features(trace: Trace, max_size: int = 189) -> Tuple[float, ...]:
     assert trace[0].timestamp == 0
     all_features = []
 
@@ -260,6 +307,17 @@ def extract_features(trace: Trace, max_size: int = 175) -> Tuple[float, ...]:
         altconc.append(0)
     if len(alt_per_sec) == 20:
         alt_per_sec.append(0)
+
+    # ------SIZE--------
+    tot_size = total_size(trace)
+    in_size, out_size = in_out_size(trace)
+    avg_total_size = average_total_pkt_size(trace)
+    avg_size_in, avg_size_out = average_in_out_pkt_size(trace)
+    var_total_size = variance_total_pkt_size(trace)
+    var_size_in, var_size_out = variance_in_out_pkt_size(trace)
+    std_total_size = std_total_pkt_size(trace)
+    std_size_in, std_size_out = std_in_out_pkt_size(trace)
+    max_size_in, max_size_out = max_in_out_pkt_size(trace)
 
     # TIME Features
     all_features.extend(intertimestats)
@@ -288,6 +346,22 @@ def extract_features(trace: Trace, max_size: int = 175) -> Tuple[float, ...]:
     all_features.append(sum(intertimestats))
     all_features.append(sum(timestats))
     all_features.append(sum(number_pkts))
+
+    # SIZE FEATURES
+    all_features.append(tot_size)
+    all_features.append(in_size)
+    all_features.append(out_size)
+    all_features.append(avg_total_size)
+    all_features.append(avg_size_in)
+    all_features.append(avg_size_out)
+    all_features.append(var_total_size)
+    all_features.append(var_size_in)
+    all_features.append(var_size_out)
+    all_features.append(std_total_size)
+    all_features.append(std_size_in)
+    all_features.append(std_size_out)
+    all_features.append(max_size_in)
+    all_features.append(max_size_out)
 
     # This is optional, since all other features are of equal size this gives
     # the first n features of this particular feature subset, some may be padded
