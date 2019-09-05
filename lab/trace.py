@@ -24,6 +24,9 @@ import scapy.utils
 from scapy.all import Raw  # pylint: disable=unused-import
 import pandas as pd
 
+scapy.layers.l2.Ether.payload_guess = [({"type": 0x800}, scapy.layers.inet.IP)]
+scapy.layers.inet.IP.payload_guess = []
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +100,8 @@ def _common_ip(packets: Iterable, client_subnet: Optional[IPNetworkType]) \
     return None
 
 
+# TODO: Remove this function since we no longer parse TCP.
+# Since we disable the parsing of TCP, this check is no longer possible.
 def _syn_originator(packets: Iterable) -> Optional[str]:
     """Identifies the client as the IP address with originating TCP-SYN
     packets. If there are multiple such IPs, then the function returns None.
