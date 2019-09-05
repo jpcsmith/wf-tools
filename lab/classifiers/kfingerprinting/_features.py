@@ -52,6 +52,7 @@ def split_in_out(list_data: Trace) -> Tuple[Trace, Trace]:
     """Returns a tuple of the packets in the (incoming, outgoing) subtraces."""
     incoming = [pkt for pkt in list_data if pkt.direction == Direction.IN]
     outgoing = [pkt for pkt in list_data if pkt.direction == Direction.OUT]
+    assert incoming and outgoing
     return (incoming, outgoing)
 
 
@@ -59,6 +60,8 @@ def split_in_out(list_data: Trace) -> Tuple[Trace, Trace]:
 # TIME FEATURES
 # -------------
 def inter_pkt_time(list_data):
+    if len(list_data) == 1:
+        return [0.0, ]
     times = [x[0] for x in list_data]
     temp = []
     for elem, next_elem in zip(times, times[1:]+[times[0]]):
