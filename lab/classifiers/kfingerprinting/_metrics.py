@@ -21,7 +21,10 @@ def false_positive_rate(y_true: Sequence, y_pred: Sequence) -> float:
             false_positives += 1
         elif true_label == predicted_label == -1:
             true_negatives += 1
-    return false_positives / (false_positives + true_negatives)
+    try:
+        return false_positives / (false_positives + true_negatives)
+    except ZeroDivisionError:
+        return 0
 
 
 def make_binary(y_true: Sequence, y_pred: Sequence, neg_label,
