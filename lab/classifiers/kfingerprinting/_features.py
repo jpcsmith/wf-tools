@@ -20,6 +20,8 @@ from lab.trace import (
     Trace
 )
 
+DEFAULT_NUM_FEATURES = 189
+
 
 # ----------------
 # Feeder functions
@@ -284,7 +286,8 @@ def max_in_out_pkt_size(list_data):
 # FEATURE FUNCTION
 # ----------------
 # If size information available add them in to function below
-def extract_features(trace: Trace, max_size: int = 189) -> Tuple[float, ...]:
+def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
+        -> Tuple[float, ...]:
     assert trace[0].timestamp == 0
     all_features = []
 
