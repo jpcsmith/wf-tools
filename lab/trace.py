@@ -1,5 +1,6 @@
 """Utilities and definitions relating to packet traces."""
 import io
+import json
 import logging
 from decimal import Decimal
 from enum import IntEnum
@@ -20,6 +21,8 @@ from typing import (
     Tuple,
     Union,
 )
+import dataclasses
+from dataclasses import dataclass
 
 import scapy.utils
 # Bug fix for rdpcap, see scapy.ml.secdev.narkive.com/h0rkmsiG/bug-in-rdpcap
@@ -226,3 +229,36 @@ class PcapToTraceConverter:
     def packet_stats(self) -> pd.DataFrame:
         """Returns summary statistics of the packet sizes."""
         return pd.DataFrame(self._packet_stats).describe().transpose()
+
+
+@dataclass
+class TraceData:
+    """Serialisable information pertaining to a traffic trace.
+
+    Attributes
+    ----------
+    domain :
+        An internet domain name.
+    protocol : 'tcp' or 'quic'
+        The protocol associated with the trace.
+    connections :
+        Counts of the number of 'udp' and 'tcp' flows in the trace,
+        where each flow is identified by the IP-port 4-tuple.
+    trace :
+        The encoded traffic trace
+    """
+    domain: str
+    protocol: str
+    connections: Dict[str, int]
+    trace: Trace
+
+    def serialise(self) -> str:
+        """Serialise the trace info to a string for writing to a file."""
+        return json.dumps(dataclasses.asdict(self))
+
+    @classmethod
+    def deserialise(cls, value: str) -> 'TraceData':
+        """Deserialise a TraceData object from a string."""
+        data = json.loads(value)
+        data['trace'] = [Packet(*pkt) for pkt in data['trace']]
+        return cls(**data)
