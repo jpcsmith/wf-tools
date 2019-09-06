@@ -15,7 +15,9 @@ from typing import (
     List,
     NamedTuple,
     Optional,
+    Sequence,
     Set,
+    Tuple,
     Union,
 )
 
@@ -24,9 +26,14 @@ import scapy.utils
 from scapy.all import Raw  # pylint: disable=unused-import
 import pandas as pd
 
+# Disable all layers & protocols besides ethernet, IP, TCP and UDP
 scapy.layers.l2.Ether.payload_guess = [({"type": 0x800}, scapy.layers.inet.IP)]
-scapy.layers.inet.IP.payload_guess = []
-
+scapy.layers.inet.IP.payload_guess = [
+    ({"frag": 0, "proto": 0x11}, scapy.layers.inet.UDP),
+    ({"frag": 0, "proto": 0x06}, scapy.layers.inet.TCP),
+]
+scapy.layers.inet.UDP.payload_guess = []
+scapy.layers.inet.TCP.payload_guess = []
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,8 +107,6 @@ def _common_ip(packets: Iterable, client_subnet: Optional[IPNetworkType]) \
     return None
 
 
-# TODO: Remove this function since we no longer parse TCP.
-# Since we disable the parsing of TCP, this check is no longer possible.
 def _syn_originator(packets: Iterable) -> Optional[str]:
     """Identifies the client as the IP address with originating TCP-SYN
     packets. If there are multiple such IPs, then the function returns None.
@@ -194,7 +199,7 @@ class PcapToTraceConverter:
         self._ip_stats[client] = self._ip_stats.get(client, 0) + 1
         return client
 
-    def to_trace(self, pcap: bytes) -> Trace:
+    def to_trace(self, pcap: bytes) -> Tuple[Trace, Sequence[scapy.all.Packet]]:
         """Converts a pcap to a packet trace."""
         packets = scapy.utils.rdpcap(io.BytesIO(pcap))
         client = self._determine_client_ip(packets)
@@ -212,7 +217,7 @@ class PcapToTraceConverter:
             trace.append(Packet(timestamp, direction, ip_layer.len))
         self._packet_stats['pcap'].append(len(packets))
         self._packet_stats['trace'].append(len(trace))
-        return trace
+        return trace, packets
 
     def ip_stats(self) -> Dict['str', int]:
         """Returns the counts of deduced client IPs."""
