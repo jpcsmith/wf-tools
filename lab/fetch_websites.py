@@ -1,5 +1,6 @@
 """This module is responsible for fetching the webpages"""
 # pylint: disable=too-few-public-methods
+import json
 import abc
 from abc import abstractmethod
 import logging
@@ -10,6 +11,7 @@ from typing import (
     Generator,
     Optional,
     TypeVar,
+    Iterable,
 )
 
 from mypy_extensions import TypedDict
@@ -192,14 +194,20 @@ class ChromiumSession:
                 f'Failed to fetch {page_url} within {timeout}s.') from error
 
         self._validate_response(self._driver.page_source)
+        self._validate_http_status(self.performance_log())
         return self._driver.page_source
 
-    def performance_log(self) -> dict:
+    def performance_log(self) -> Iterable[dict]:
         """Returns a dictionary of the peformance log messages gathered from the
         browser.
         """
         assert self._driver is not None
-        return self._driver.get_log('performance')
+        log = self._driver.get_log('performance')
+        assert log is not None
+
+        for entry in log:
+            entry['message'] = json.loads(entry['message'])
+        return log
 
     def _validate_response(self, page_source: str) -> None:
         """Raises `FetchFailed` error on an empty html document."""
@@ -207,6 +215,28 @@ class ChromiumSession:
             page_url = self._domain.as_https_url()
             raise FetchFailed(
                 f"Fetch failed for {page_url}. Server may not support QUIC.")
+
+    def _validate_http_status(self, log: Iterable[dict]) -> None:
+        """Checks the HTTP status in the logs for failure.
+
+        Raises `FetchFailed` iff the browser log contain a request for the
+        domain with an HTTP error status.
+        """
+        def _response_events():
+            for entry in log:
+                event = entry['message']['message']
+                if event['method'] == 'Network.responseReceived':
+                    yield event
+
+        url = self._domain.as_https_url()
+        for event in _response_events():
+            if event['params']['type'].lower() == 'document':
+                response = event['params']['response']
+                if response['status'] >= 400 and url in response['url'] and (
+                        len(response['url']) - len(url) <= 1):
+                    raise FetchFailed(
+                        "Fetch failed for {url}. Response code of "
+                        "{response['status']} for document {response['url']}")
 
 
 class SessionFactory(abc.ABC):
@@ -231,7 +261,7 @@ Result = TypedDict('Result', {
     'with_quic': bool,
     'page_source': Optional[str],
     'status': Literal['success', 'timeout', 'failure'],
-    'http_trace': Dict[str, Any],
+    'http_trace': Iterable[Dict[str, Any]],
     'packets': bytes,
 })
 
