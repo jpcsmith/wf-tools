@@ -146,29 +146,50 @@ def test_repeated_failure(sniffer, seq_failed_session_factory):
     assert result == expected
 
 
-def test_repeated_failure_continue(sniffer, seq_failed_session_factory):
+def test_repeated_failure_continue(sniffer):
     """It should stop the repetitions on an repeated failures."""
+    factory = create_mock_factory([
+        {'page_source': f'source-A', 'fetch_page.return_value': f'source-A',
+         'performance_log.return_value': f'trace-A'},
+        {'page_source': None, 'fetch_page.side_effect': FetchFailed,
+         'performance_log.return_value': f'trace-B'},
+        {'page_source': None, 'fetch_page.side_effect': FetchFailed,
+         'performance_log.return_value': f'trace-C'},
+        {'page_source': f'source-A', 'fetch_page.return_value': f'source-D',
+         'performance_log.return_value': f'trace-D'},
+        {'page_source': None, 'fetch_page.side_effect': FetchFailed,
+         'performance_log.return_value': f'trace-E'},
+        {'page_source': f'source-F', 'fetch_page.return_value': f'source-F',
+         'performance_log.return_value': f'trace-F'},
+        {'page_source': None, 'fetch_page.side_effect': FetchFailed,
+         'performance_log.return_value': f'trace-G'}])
+
     domain = Domain('example.com')
     expected = [
-        # QUIC successes
+        # QUIC success
         {'domain': domain, 'with_quic': True, 'page_source': 'source-A',
          'status': 'success', 'http_trace': 'trace-A', 'packets': 'capture-A'},
-        {'domain': domain, 'with_quic': True, 'page_source': 'source-B',
-         'status': 'success', 'http_trace': 'trace-B', 'packets': 'capture-B'},
         # QUIC failures
         {'domain': domain, 'with_quic': True, 'page_source': None,
-         'status': 'failure', 'http_trace': 'trace-C', 'packets': 'capture-C'},
+         'status': 'failure', 'http_trace': 'trace-B', 'packets': 'capture-B'},
         {'domain': domain, 'with_quic': True, 'page_source': None,
-         'status': 'failure', 'http_trace': 'trace-D', 'packets': 'capture-D'},
+         'status': 'failure', 'http_trace': 'trace-C', 'packets': 'capture-C'},
+        # QUIC success
+        {'domain': domain, 'with_quic': True, 'page_source': 'source-D',
+         'status': 'success', 'http_trace': 'trace-D', 'packets': 'capture-D'},
+        # QUIC failure
         {'domain': domain, 'with_quic': True, 'page_source': None,
          'status': 'failure', 'http_trace': 'trace-E', 'packets': 'capture-E'},
+        # QUIC success
+        {'domain': domain, 'with_quic': True, 'page_source': 'source-F',
+         'status': 'success', 'http_trace': 'trace-F', 'packets': 'capture-F'},
         # TCP failure
         {'domain': domain, 'with_quic': False, 'page_source': None,
-         'status': 'failure', 'http_trace': 'trace-F', 'packets': 'capture-F'},
+         'status': 'failure', 'http_trace': 'trace-G', 'packets': 'capture-G'},
     ]
 
-    experiment = WebsiteTraceExperiment(sniffer, seq_failed_session_factory)
+    experiment = WebsiteTraceExperiment(sniffer, factory)
 
-    result = list(experiment.sample_domain(domain, repetitions=10))
+    result = list(experiment.sample_domain(domain, repetitions=3))
 
     assert result == expected
