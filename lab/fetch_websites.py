@@ -12,6 +12,7 @@ from typing import (
     Optional,
     TypeVar,
     Iterable,
+    Iterator,
 )
 
 from mypy_extensions import TypedDict
@@ -266,6 +267,48 @@ Result = TypedDict('Result', {
 })
 
 
+class RepetitionTracker:
+    """Tracks the repetitions and failures in the WebsiteTraceExperiment."""
+    def __init__(self, repetitions: int, max_consecutive_failures: int = 3):
+        assert max_consecutive_failures > 0
+        self.repetitions = repetitions
+        self.max_consecutive_failures = max_consecutive_failures
+        self.counts = {'success': 0, 'total': 0, 'failure-seq': 0}
+
+    def is_first(self) -> bool:
+        """Returns true iff there have been no observed successful results."""
+        return self.counts['success'] == 0
+
+    def only_failures(self) -> bool:
+        """Return true iff there are failures without any successes."""
+        return self.counts['success'] == 0 and self.counts['total'] > 0
+
+    def too_many_failures(self) -> bool:
+        """Returns true iff a sequence of max_consecutive_failures was observed.
+        """
+        return self.counts['failure-seq'] == self.max_consecutive_failures
+
+    def repeat(self) -> bool:
+        """Returns true if the experiment should continue fetching."""
+        assert self.counts['failure-seq'] <= self.max_consecutive_failures
+        if self.only_failures() or self.too_many_failures():
+            return False
+        assert self.counts['success'] <= self.repetitions
+        if self.counts['success'] == self.repetitions:
+            return False
+        return True
+
+    def observe(self, result: Result) -> Result:
+        """Update the repetition progress with the observed result."""
+        if result['status'] == 'success':
+            self.counts['success'] += 1
+            self.counts['failure-seq'] = 0
+        else:
+            self.counts['failure-seq'] += 1
+        self.counts['total'] += 1
+        return result
+
+
 class WebsiteTraceExperiment:
     """Experiment consisting for fetching and tracing website traffic."""
     def __init__(self, sniffer: PacketSniffer, session_factory: SessionFactory):
@@ -273,37 +316,41 @@ class WebsiteTraceExperiment:
         self._sniffer = sniffer
         self._session_factory = session_factory
 
-    def sample_domain(
-        self, domain: Domain, repetitions: int = 1, stop_on_error: bool = True,
+    def _sample_with_repetitions(
+        self,
+        domain: Domain,
+        tracker: RepetitionTracker,
+        use_quic: bool,
         keep_sources: Literal['all', 'first', 'none'] = 'all'
-    ) -> SimpleGenerator[Result]:
-        """Yields the results of sampling with and without QUIC.
+    ) -> Iterator[Result]:
+        """Perform the sampling with repetitions using the provided tracker."""
+        protocol = 'QUIC' if use_quic else 'TCP'
 
-        When save_all_sources is False, only the source of the first repetition
-        will be provided.
-        """
-        failed = ''
-
-        for repetition in range(1, repetitions + 1):
+        while tracker.repeat():
             with_source = keep_sources == 'all' or (
-                keep_sources == 'first' and repetition == 1)
+                keep_sources == 'first' and tracker.is_first())
+            yield tracker.observe(
+                self.sample(domain, use_quic=use_quic, with_source=with_source))
 
-            quic_sample = self.sample(
-                domain, use_quic=True, with_source=with_source)
-            failed += '' if quic_sample['status'] == 'success' else 'QUIC'
-            yield quic_sample
+        if tracker.only_failures() or tracker.too_many_failures():
+            self._logger.warning("Stopped fetching %s sites for %s due to "
+                                 "failures.", protocol, domain)
+        self._logger.info("%s fetch stats - %s", protocol, tracker.counts)
 
-            tcp_sample = self.sample(
-                domain, use_quic=False, with_source=with_source)
-            failed += '' if tcp_sample['status'] == 'success' else (
-                ' and TCP' if failed is not None else 'TCP')
-            yield tcp_sample
+    def sample_domain(
+        self,
+        domain: Domain,
+        repetitions: int = 1,
+        keep_sources: Literal['all', 'first', 'none'] = 'all'
+    ) -> Iterator[Result]:
+        """Yields the results of sampling with and without QUIC."""
+        tracker = RepetitionTracker(repetitions)
+        yield from self._sample_with_repetitions(
+            domain, tracker, use_quic=True, keep_sources=keep_sources)
 
-            if failed and stop_on_error:
-                self._logger.warning(
-                    'Stopped at repetition %d for domain %s as %s failed.',
-                    repetition, domain, failed)
-                return
+        tracker = RepetitionTracker(tracker.counts['success'] or 1)
+        yield from self._sample_with_repetitions(
+            domain, tracker, use_quic=False, keep_sources=keep_sources)
 
     def sample(
         self, domain: Domain, use_quic: bool, with_source: bool = True
