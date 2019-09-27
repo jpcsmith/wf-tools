@@ -1,9 +1,10 @@
 """This module is responsible for fetching the webpages"""
 # pylint: disable=too-few-public-methods
 import json
+import time
+import logging
 import abc
 from abc import abstractmethod
-import logging
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -14,6 +15,7 @@ from typing import (
     Iterable,
     Iterator,
 )
+from urllib3.exceptions import MaxRetryError
 
 from mypy_extensions import TypedDict
 from typing_extensions import Literal
@@ -39,6 +41,8 @@ SimpleGenerator = Generator[T, None, None]
 # --------------------------------------------------
 class FetchTimeout(Exception):
     """Raised when requesting a website times out."""
+    def __init__(self, url: str, timeout: int):
+        super().__init__(f"Failed to fetch {url} within {timeout}s")
 
 
 class FetchFailed(Exception):
@@ -75,25 +79,34 @@ class WebDriverFactory(abc.ABC):
 
 class ChromiumFactory(WebDriverFactory):
     """Creates Chromium webdrivers."""
-    def __init__(self, driver_path: str = './chromedriver'):
+    def __init__(self, driver_path: str = './chromedriver',
+                 max_attempts: int = 3, retry_delay: int = 3):
         assert driver_path
+        assert max_attempts > 0
         self._logger = logging.getLogger(__name__)
         self.driver_path = driver_path
+        self.max_attempts = max_attempts
+        self.retry_delay = retry_delay
 
     def create(self, quic_domain: Optional[Domain]) -> WebDriver:
         options = self.chrome_options(quic_domain)
-        try:
-            driver = webdriver.Chrome(
-                executable_path=self.driver_path, options=options)
-        except WebDriverException:
-            self._logger.critical(
-                "Failed to create a webdriver from %s with arguments %s",
-                self.driver_path, options.arguments)
-            raise
-
-        self._logger.info('Chromedriver created from %s with arguments %s.',
-                          self.driver_path, options.arguments)
-        return driver
+        for attempt in range(0, self.max_attempts):
+            try:
+                driver = webdriver.Chrome(executable_path=self.driver_path,
+                                          options=options)
+                self._logger.info('Chromedriver created with %s and args %s.',
+                                  self.driver_path, options.arguments)
+                return driver
+            except (WebDriverException, MaxRetryError):
+                self._logger.critical(
+                    "Failed to create a webdriver from %s with args %s. "
+                    "Attempt %d of %d.", self.driver_path, options.arguments,
+                    attempt, self.max_attempts)
+                if attempt == self.max_attempts:
+                    raise
+                self._logger.info("Waiting %ss before next attempt",
+                                  self.retry_delay)
+                time.sleep(self.retry_delay)
 
     @staticmethod
     def chrome_options(quic_domain: Optional[Domain])\
@@ -190,13 +203,25 @@ class ChromiumSession:
         page_url = self._domain.as_https_url()
         try:
             self._driver.get(page_url)
+            page_source = self._driver.page_source
         except selenium.common.exceptions.TimeoutException as error:
-            raise FetchTimeout(
-                f'Failed to fetch {page_url} within {timeout}s.') from error
+            raise FetchTimeout(page_url, timeout) from error
+        except WebDriverException as error:
+            self._maybe_wrap_error(error)
+            raise
 
-        self._validate_response(self._driver.page_source)
+        self._validate_response(page_source)
         self._validate_http_status(self.performance_log())
-        return self._driver.page_source
+        return page_source
+
+    def _maybe_wrap_error(self, error: WebDriverException):
+        """Wraps specific errors in FetchFailed and raises it or does nothing
+        otherwise.
+        """
+        if "bad inspector message" in error.msg[:50]:
+            page_url = self._domain.as_https_url()
+            raise FetchFailed(f"Fetch failed for {page_url}. Invalid unicode "
+                              f"in the page.")
 
     def performance_log(self) -> Iterable[dict]:
         """Returns a dictionary of the peformance log messages gathered from the
@@ -236,8 +261,8 @@ class ChromiumSession:
                 if response['status'] >= 400 and url in response['url'] and (
                         len(response['url']) - len(url) <= 1):
                     raise FetchFailed(
-                        "Fetch failed for {url}. Response code of "
-                        "{response['status']} for document {response['url']}")
+                        f"Fetch failed for {url}. Response code of "
+                        f"{response['status']} for document {response['url']}")
 
 
 class SessionFactory(abc.ABC):
@@ -367,11 +392,14 @@ class WebsiteTraceExperiment:
                 self._logger.info('Successfully fetched domain %s (quic: %s).',
                                   domain, use_quic)
             except FetchTimeout as error:
-                self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
-                                     domain, use_quic, error)
+                self._logger.warning('%s (quic: %s). %s', domain, use_quic,
+                                     error)
                 status = 'timeout'
-            except (FetchFailed, UnexpectedAlertPresentException) as error:
-                self._logger.warning('Failed to fetch domain %s (quic: %s). %s',
+            except (
+                FetchFailed, UnexpectedAlertPresentException,
+                WebDriverException,
+            ) as error:
+                self._logger.warning('Failed to fetch %s (quic: %s). %s',
                                      domain, use_quic, error)
                 status = 'failure'
             finally:
