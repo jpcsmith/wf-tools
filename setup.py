@@ -17,6 +17,8 @@ DEPENDENCIES = [
     'scapy>=2.4.3rc4',
     'selenium',
     'typing-extensions',
+    'scipy',
+    'sklearn',
 ]
 
 
