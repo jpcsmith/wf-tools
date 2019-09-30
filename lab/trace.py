@@ -232,6 +232,11 @@ class PcapToTraceConverter:
         return pd.DataFrame(self._packet_stats).describe().transpose()
 
 
+TraceStats = TypedDict('TraceStats', {
+    'udp-flows': int, 'tcp-flows': int, 'udp-bytes': int, 'tcp-bytes': int
+})
+
+
 @dataclass
 class TraceData:
     """Serialisable information pertaining to a traffic trace.
@@ -249,13 +254,9 @@ class TraceData:
     trace :
         The encoded traffic trace
     """
-    Stats = TypedDict('Stats', {
-        'udp-flows': int, 'tcp-flows': int, 'udp-bytes': int, 'tcp-bytes': int
-    })
-
     domain: str
     protocol: str
-    connections: Stats
+    connections: TraceStats
     trace: Trace
 
     def serialise(self) -> str:
