@@ -24,6 +24,7 @@ from typing import (
 import dataclasses
 from dataclasses import dataclass
 
+from mypy_extensions import TypedDict
 import scapy.utils
 # Bug fix for rdpcap, see scapy.ml.secdev.narkive.com/h0rkmsiG/bug-in-rdpcap
 from scapy.all import Raw  # pylint: disable=unused-import
@@ -243,13 +244,18 @@ class TraceData:
         The protocol associated with the trace.
     connections :
         Counts of the number of 'udp' and 'tcp' flows in the trace,
-        where each flow is identified by the IP-port 4-tuple.
+        where each flow is identified by the IP-port 4-tuple. As well as the
+        total bytes sent via UDP & TCP
     trace :
         The encoded traffic trace
     """
+    Stats = TypedDict('Stats', {
+        'udp-flows': int, 'tcp-flows': int, 'udp-bytes': int, 'tcp-bytes': int
+    })
+
     domain: str
     protocol: str
-    connections: Dict[str, int]
+    connections: Stats
     trace: Trace
 
     def serialise(self) -> str:
