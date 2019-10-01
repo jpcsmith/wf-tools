@@ -15,7 +15,6 @@ from typing import (
 )
 
 import pandas as pd
-import scipy.spatial.distance
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
 from sklearn.base import (
@@ -73,7 +72,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
         self._graph = NearestNeighbors(
             n_neighbors=self.n_neighbours,
-            metric=scipy.spatial.distance.hamming,
+            metric='hamming',
             n_jobs=self.forest.n_jobs)
         self._logger.info("Fitting the nearest neighbor graph.")
         self._graph.fit(self.forest.apply(X))
