@@ -366,16 +366,18 @@ class WebsiteTraceExperiment:
         self,
         domain: Domain,
         repetitions: int = 1,
-        keep_sources: Literal['all', 'first', 'none'] = 'all'
+        keep_sources: Literal['all', 'first', 'none'] = 'all',
+        fetch_tcp: bool = True
     ) -> Iterator[Result]:
         """Yields the results of sampling with and without QUIC."""
         tracker = RepetitionTracker(repetitions)
         yield from self._sample_with_repetitions(
             domain, tracker, use_quic=True, keep_sources=keep_sources)
 
-        tracker = RepetitionTracker(tracker.counts['success'] or 1)
-        yield from self._sample_with_repetitions(
-            domain, tracker, use_quic=False, keep_sources=keep_sources)
+        if fetch_tcp:
+            tracker = RepetitionTracker(tracker.counts['success'] or 1)
+            yield from self._sample_with_repetitions(
+                domain, tracker, use_quic=False, keep_sources=keep_sources)
 
     def sample(
         self, domain: Domain, use_quic: bool, with_source: bool = True
