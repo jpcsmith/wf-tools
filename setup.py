@@ -15,7 +15,7 @@ DEPENDENCIES = [
     'mypy-extensions',
     'pandas',
     'scapy>=2.4.3rc4',
-    'selenium',
+    'selenium==4.0.0a1',
     'typing-extensions',
     'scipy',
     'sklearn',
