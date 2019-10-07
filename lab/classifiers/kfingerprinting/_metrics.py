@@ -7,6 +7,21 @@ from typing import (
 BinarySequence = Sequence[int]
 
 
+def true_positive_rate(y_true: Sequence, y_pred: Sequence) -> float:
+    """Calculates the true positive rate binary classification results.
+    Assumes that the negative class is -1.
+    """
+    assert set(y_true).issubset({1, -1})
+    assert set(y_pred).issubset({1, -1})
+
+    num_positive = sum(1 for val in y_true if val == 1)
+    true_positive = sum(1 for t, p in zip(y_true, y_pred) if t == p == 1)
+    try:
+        return true_positive / num_positive
+    except ZeroDivisionError:
+        return 0
+
+
 def false_positive_rate(y_true: Sequence, y_pred: Sequence) -> float:
     """Calculates the false positive rate binary classification results.
     Assumes that the negative class is -1.
