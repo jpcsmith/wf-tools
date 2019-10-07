@@ -79,7 +79,8 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         self._labels = pd.Series(y)
         self._logger.info("Model fitting complete.")
 
-    def predict(self, X, unknown_label: Any = 'unknown'):  # pylint: disable=invalid-name
+    def predict(self, X, unknown_label: Any = 'unknown',  # pylint: disable=invalid-name
+                n_neighbors: Optional[int] = None):
         """Predict the class for X.
 
         The predicted class is the unanimous label of the k-closest neighbours
@@ -90,7 +91,8 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         self._logger.debug("Determining leaves for the prediction.")
         leaves = self.forest.apply(X)
         self._logger.debug("Identifying neighbours of the leaves.")
-        neighbourhoods = self._graph.kneighbors(leaves, return_distance=False)
+        neighbourhoods = self._graph.kneighbors(leaves, return_distance=False,
+                                                n_neighbors=n_neighbors)
         result = []
         self._logger.debug("Formulating decision.")
         for neighbours_list in neighbourhoods:
