@@ -80,16 +80,18 @@ class WebDriverFactory(abc.ABC):
 class ChromiumFactory(WebDriverFactory):
     """Creates Chromium webdrivers."""
     def __init__(self, driver_path: str = './chromedriver',
-                 max_attempts: int = 3, retry_delay: int = 3):
+                 max_attempts: int = 3, retry_delay: int = 3,
+                 quic_version: int = 43):
         assert driver_path
         assert max_attempts > 0
         self._logger = logging.getLogger(__name__)
         self.driver_path = driver_path
         self.max_attempts = max_attempts
         self.retry_delay = retry_delay
+        self.quic_version = quic_version
 
     def create(self, quic_domain: Optional[Domain]) -> WebDriver:
-        options = self.chrome_options(quic_domain)
+        options = self.chrome_options(quic_domain, self.quic_version)
         for attempt in range(0, self.max_attempts):
             try:
                 driver = webdriver.Chrome(executable_path=self.driver_path,
@@ -109,7 +111,7 @@ class ChromiumFactory(WebDriverFactory):
                 time.sleep(self.retry_delay)
 
     @staticmethod
-    def chrome_options(quic_domain: Optional[Domain])\
+    def chrome_options(quic_domain: Optional[Domain], quic_version: int)\
             -> webdriver.ChromeOptions:
         """Provide a set of options for the chrome webdriver."""
         options = webdriver.ChromeOptions()
@@ -128,7 +130,7 @@ class ChromiumFactory(WebDriverFactory):
         # Force or disable QUIC
         if quic_domain is not None:
             options.add_argument('--enable-quic')
-            options.add_argument('--quic-version=QUIC_VERSION_43')
+            options.add_argument(f'--quic-version=QUIC_VERSION_{quic_version}')
             options.add_argument('--origin-to-force-quic-on={}'.format(
                 quic_domain.with_port(443)))
         else:
