@@ -7,6 +7,7 @@
 Minor adjustments to the work of the original authors from the paper. The
 original can be found at https://github.com/jhayes14/k-FP.
 """
+import logging
 import math
 from typing import (
     Tuple,
@@ -21,6 +22,7 @@ from lab.trace import (
 )
 
 DEFAULT_NUM_FEATURES = 189
+_LOGGER = logging.getLogger(__name__)
 
 
 # ----------------
@@ -353,6 +355,8 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     all_features.append(sum(timestats))
     all_features.append(sum(number_pkts))
 
+    n_time_features = len(all_features)
+
     # SIZE FEATURES
     all_features.append(tot_size)
     all_features.append(in_size)
@@ -369,6 +373,8 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     all_features.append(max_size_in)
     all_features.append(max_size_out)
 
+    n_size_features = len(all_features) - n_time_features
+
     # This is optional, since all other features are of equal size this gives
     # the first n features of this particular feature subset, some may be padded
     # with 0's if too short.
@@ -379,4 +385,6 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
         all_features.append(0)
     features = all_features[:max_size]
 
+    _LOGGER.info("Feature vector comprises %d time and %d size features.",
+                 n_time_features, n_size_features)
     return tuple(features)
