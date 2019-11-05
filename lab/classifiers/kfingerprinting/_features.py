@@ -385,6 +385,6 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
         all_features.append(0)
     features = all_features[:max_size]
 
-    _LOGGER.info("Feature vector comprises %d time and %d size features.",
-                 n_time_features, n_size_features)
+    _LOGGER.debug("Feature vector comprises %d time and %d size features.",
+                  n_time_features, n_size_features)
     return tuple(features)
