@@ -90,5 +90,44 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         assert predictions.dtype == choice.dtype
         return np.array(list(zip(choice, predictions)))
 
+    def predict_proba_soft(self, X) -> np.ndarray:
+        """Return the probability predictions, weighted according to the
+        distinguisher.
+
+        This is invoked by predict_proba when the voting type is soft.
+        """
+        choice_proba = np.array(self.distinguisher.predict_proba(X))
+        pos_predictions = np.array(self.classifier_pos.predict_proba(X))
+        neg_predictions = np.array(self.classifier_neg.predict_proba(X))
+
+
     def predict_proba(self, X) -> np.ndarray:
-        """Predict the weights for the various classes."""
+        """Return the belief in the decision as well as in that of the various
+        classes.
+
+        The resulting ndarray is of shape (n_samples, n_classes + 1), where the
+        first column specifies the belief in the decision, and the remaining
+        specify the beliefs in the classes.
+        """
+        if self.voting == 'soft':
+            return self.predict_proba_soft(X)
+
+        choice_proba = np.array(self.distinguisher.predict_proba(X))
+        mask = choice_proba > 0.5
+
+        pos_predictions = np.array(self.classifier_pos.predict_proba(X[mask]))
+        neg_predictions = np.array(self.classifier_neg.predict_proba(X[~mask]))
+
+        assert pos_predictions.dtype == neg_predictions.dtype \
+            == choice_proba.dtype
+        # pylint: disable=unsubscriptable-object
+        assert pos_predictions.shape[1] == neg_predictions.shape[1]
+        n_classes = pos_predictions.shape[1]
+        # pylint: enable=unsubscriptable-object
+
+        result = np.ndarray((len(X), n_classes + 1), dtype=float)
+        result[mask, 1:] = pos_predictions
+        result[~mask, 1:] = neg_predictions
+        result[:, 0] = choice_proba
+
+        return result

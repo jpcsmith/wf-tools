@@ -128,3 +128,36 @@ def test_hard_predict(mocked_cond_classifier, test_dataset):
     np.testing.assert_array_equal(X[neg_idx], test_x)
 
     np.testing.assert_array_equal(y, test_y)
+
+
+def test_hard_predict_proba(mocked_cond_classifier, test_dataset):
+    """It should correctly combine the predicitions, with the decision
+    probability in the first column.
+    """
+    X, _, pos_idx, neg_idx = test_dataset
+    classifier = mocked_cond_classifier
+
+    y_probs = np.array(
+        [[0.6, 0.6, 0.3, 0.1], [0.7, 0.7, 0.2, 0.1], [0.1, 0.8, 0.1, 0.1],
+         [0.8, 0.1, 0.8, 0.1], [0.2, 0.1, 0.7, 0.2], [0.3, 0.2, 0.8, 0],
+         [0.9, 0, 0.1, 0.9], [0.6, 0.1, 0.1, 0.8], [0.4, 0.2, 0.1, 0.7]])
+
+    classifier.distinguisher.predict_proba.return_value = y_probs[:, 0]
+    classifier.classifier_pos.predict_proba.return_value = y_probs[pos_idx, 1:4]
+    classifier.classifier_neg.predict_proba.return_value = y_probs[neg_idx, 1:4]
+
+    test_y = classifier.predict_proba(X)
+
+    classifier.distinguisher.predict_proba.assert_called_once()
+    test_x = classifier.distinguisher.predict_proba.call_args[0][0]
+    np.testing.assert_array_equal(X, test_x)
+
+    classifier.classifier_pos.predict_proba.assert_called_once()
+    test_x = classifier.classifier_pos.predict_proba.call_args[0][0]
+    np.testing.assert_array_equal(X[pos_idx], test_x)
+
+    classifier.classifier_neg.predict_proba.assert_called_once()
+    test_x = classifier.classifier_neg.predict_proba.call_args[0][0]
+    np.testing.assert_array_equal(X[neg_idx], test_x)
+
+    np.testing.assert_array_equal(y_probs, test_y)
