@@ -1,6 +1,5 @@
 """Tests for lab.classifiers.other classifiers."""
 from unittest.mock import Mock
-from typing import Tuple
 
 import pytest
 import numpy as np
@@ -23,7 +22,7 @@ def fixture_mocked_cond_classifier() -> ConditionalClassifier:
 
 
 @pytest.fixture(name='test_dataset')
-def fixture_test_dataset() -> Tuple[np.ndarray, np.ndarray]:
+def fixture_test_dataset():
     """Return a feature array of size (9, 3) and class labels of type
     (9, 2).
 
@@ -34,7 +33,9 @@ def fixture_test_dataset() -> Tuple[np.ndarray, np.ndarray]:
     y = np.array([[1, 0], [1, 0], [-1, 0],
                   [1, 1], [-1, 1], [-1, 1],
                   [1, 2], [1, 2], [-1, 2]])
-    return X, y
+    pos_idx = [0, 1, 3, 6, 7]
+    neg_idx = [2, 4, 5, 8]
+    return X, y, pos_idx, neg_idx
 
 
 def test_conditional_classifier_fit(mocked_cond_classifier):
@@ -105,12 +106,12 @@ def test_conditional_classifier_fit(mocked_cond_classifier):
 
 def test_hard_predict(mocked_cond_classifier, test_dataset):
     """It should correctly combine the predicitions."""
-    X, y = test_dataset
+    X, y, pos_idx, neg_idx = test_dataset
     classifier = mocked_cond_classifier
 
     classifier.distinguisher.predict.return_value = y[:, 0]
-    classifier.classifier_pos.predict.return_value = np.array([0, 0, 1, 2, 2])
-    classifier.classifier_neg.predict.return_value = np.array([0, 1, 1, 2])
+    classifier.classifier_pos.predict.return_value = y[pos_idx, 1]
+    classifier.classifier_neg.predict.return_value = y[neg_idx, 1]
 
     test_y = classifier.predict(X)
 
@@ -120,13 +121,10 @@ def test_hard_predict(mocked_cond_classifier, test_dataset):
 
     classifier.classifier_pos.predict.assert_called_once()
     test_x = classifier.classifier_pos.predict.call_args[0][0]
-    np.testing.assert_array_equal(
-        [[1, 2, 3], [4, 5, 6], [10, 11, 12], [19, 20, 21], [22, 23, 24]],
-        test_x)
+    np.testing.assert_array_equal(X[pos_idx], test_x)
 
     classifier.classifier_neg.predict.assert_called_once()
     test_x = classifier.classifier_neg.predict.call_args[0][0]
-    np.testing.assert_array_equal(
-        [[7, 8, 9], [13, 14, 15], [16, 17, 18], [25, 26, 27]], test_x)
+    np.testing.assert_array_equal(X[neg_idx], test_x)
 
     np.testing.assert_array_equal(y, test_y)
