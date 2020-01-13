@@ -31,11 +31,9 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
     Note
     ----
     As we are using a multidimensional numpy array for the y-values, be careful
-    as numpy arrays only store one time.  pos_label is currently an int, and
+    as numpy arrays only store one type.  pos_label is currently an int, and
     will therefore not compare truthily to a pos_label which is a string, for
     example '1', which may occur if the class labels are strings.
-
-    TLDR: For best results, use sequential digits for the classes.
     """
     # pylint: disable=too-many-arguments
     def __init__(self, distinguisher: Estimator, classifier_pos: Estimator,
@@ -77,13 +75,13 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
 
         This is invoked by predict when the voting type is soft.
 
-        Fixes 1 for the positive class and -1 for the negative class.
+        Fixes 1 for the positive class and 0 for the negative class.
         """
         probs = self.predict_proba_soft(X)
         mask = probs[:, 0] > 0.5
 
         result = np.ndarray((len(probs), 2), dtype=object)
-        result[:, 0] = np.where(mask, 1, -1)
+        result[:, 0] = np.where(mask, 1, 0)
         result[:, 1] = self.encoder.classes_[np.argmax(probs[:, 1:], axis=1)]
         return result
 
