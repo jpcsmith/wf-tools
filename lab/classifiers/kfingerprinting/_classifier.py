@@ -11,16 +11,13 @@ from typing import (
     Optional,
     Iterable,
     TypeVar,
-    Any,
+    Union,
 )
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
-from sklearn.base import (
-    BaseEstimator,
-    ClassifierMixin,
-)
+from sklearn.base import BaseEstimator, ClassifierMixin
 
 
 Element = TypeVar('Element')
@@ -47,6 +44,9 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     ----------
     forest :
         Specifies the random forest classifier to use as the underlying forest.
+        If absent, one is created with 150 trees and oob_scoring, as well as
+        using the n_jobs and random_state provided.  If provided in addtition
+        to n_jobs and random_state, they are ignored.
 
     n_neighbours :
         The number of nearest neighbours to use for the prediction.
@@ -58,12 +58,17 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     scalable website fingerprinting technique." 25th {USENIX} Security
     Symposium ({USENIX} Security 16). 2016.
     """
-    def __init__(self, forest: RandomForestClassifier, n_neighbours: int = 3):
+    def __init__(self, forest: Optional[RandomForestClassifier] = None,
+                 n_neighbours: int = 2, n_jobs=None, random_state=None,
+                 unknown_label: Union[str, int, None] = None):
         self._logger = logging.getLogger(__name__)
-        self.forest = forest
+        self.forest = forest if forest is not None else RandomForestClassifier(
+            n_estimators=150, oob_score=True, n_jobs=n_jobs,
+            random_state=random_state)
         self.n_neighbours = n_neighbours
         self._graph: Optional[NearestNeighbors] = None
         self._labels = None
+        self.unknown_label = unknown_label
 
     def fit(self, X, y):  # pylint: disable=invalid-name
         """Fit the estimator according to the given training data."""
@@ -79,8 +84,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         self._labels = pd.Series(y)
         self._logger.info("Model fitting complete.")
 
-    def predict(self, X, unknown_label: Any = 'unknown',  # pylint: disable=invalid-name
-                n_neighbors: Optional[int] = None):
+    def predict(self, X, n_neighbors: Optional[int] = None):
         """Predict the class for X.
 
         The predicted class is the unanimous label of the k-closest neighbours
@@ -101,5 +105,5 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
             prediction = _unique_element(labels)
             # Explicitly check for None since 0/False are valid predictions
             result.append(prediction if prediction is not None
-                          else unknown_label)
+                          else self.unknown_label)
         return result
