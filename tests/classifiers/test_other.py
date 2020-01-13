@@ -31,9 +31,9 @@ def fixture_test_dataset():
     """
     X = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15],
                   [16, 17, 18], [19, 20, 21], [22, 23, 24], [25, 26, 27]])
-    y = np.array([[1, 0], [1, 0], [-1, 0],
-                  [1, 1], [-1, 1], [-1, 1],
-                  [1, 2], [1, 2], [-1, 2]])
+    y = np.array([[1, 'a'], [1, 'a'], [-1, 'a'],
+                  [1, 'b'], [-1, 'b'], [-1, 'b'],
+                  [1, 'c'], [1, 'c'], [-1, 'c']], dtype=object)
     pos_idx = [0, 1, 3, 6, 7]
     neg_idx = [2, 4, 5, 8]
     return X, y, pos_idx, neg_idx
@@ -44,7 +44,7 @@ def test_conditional_classifier_fit(mocked_cond_classifier):
     sub-classifiers
     """
     X = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    y = np.array([[1, 0], [-1, 0], [1, 1]])
+    y = np.array([[1, 'a'], [-1, 'a'], [1, 'b']], dtype=object)
 
     mocked_cond_classifier.fit(X, y)
 
@@ -56,12 +56,14 @@ def test_conditional_classifier_fit(mocked_cond_classifier):
     mocked_cond_classifier.classifier_pos.fit.assert_called_once()
     test_x, test_y = mocked_cond_classifier.classifier_pos.fit.call_args[0]
     np.testing.assert_array_equal([[1, 2, 3], [7, 8, 9]], test_x)
-    np.testing.assert_array_equal([0, 1], test_y)
+    np.testing.assert_array_equal(['a', 'b'], test_y)
 
     mocked_cond_classifier.classifier_neg.fit.assert_called_once()
     test_x, test_y = mocked_cond_classifier.classifier_neg.fit.call_args[0]
     np.testing.assert_array_equal([[4, 5, 6]], test_x)
-    np.testing.assert_array_equal([0], test_y)
+    np.testing.assert_array_equal(['a'], test_y)
+
+    np.testing.assert_array_equal(mocked_cond_classifier.classes_, ['a', 'b'])
 
 
 def test_hard_predict(mocked_cond_classifier, test_dataset):
@@ -137,6 +139,7 @@ class SoftPredictionsTest(unittest.TestCase):
         self.X = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
         self.classifier = self.mocked_cond_classifier  # pylint: disable=no-member
         self.classifier.voting = 'soft'
+        self.classifier.encoder.fit(['a', 'b', 'c'])
 
         self.pos_predictions = np.array([[0.6, 0.3, 0.1],
                                          [0.5, 0.2, 0.3],
@@ -147,7 +150,7 @@ class SoftPredictionsTest(unittest.TestCase):
         self.y_probs = np.array([[0.5, 0.55, 0.35, 0.1],
                                  [0.1, 0.41, 0.11, 0.48],
                                  [0.4, 0.44, 0.16, 0.4]])
-        self.y = np.array([[-1, 0], [-1, 2], [-1, 0]])
+        self.y = np.array([[-1, 'a'], [-1, 'c'], [-1, 'a']], dtype=object)
 
     def test_soft_predict_proba(self):
         """It should correctly combine the predicitions, with the decision
@@ -189,4 +192,4 @@ class SoftPredictionsTest(unittest.TestCase):
         test_x = self.classifier.predict_proba_soft.call_args[0][0]
         np.testing.assert_array_equal(self.X, test_x)
 
-        np.testing.assert_allclose(self.y, test_y)
+        np.testing.assert_array_equal(self.y, test_y)

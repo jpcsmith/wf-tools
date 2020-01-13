@@ -3,6 +3,7 @@ from typing import TypeVar
 
 import numpy as np
 import sklearn
+import sklearn.preprocessing
 
 
 Estimator = TypeVar('Estimator')
@@ -33,6 +34,8 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
     as numpy arrays only store one time.  pos_label is currently an int, and
     will therefore not compare truthily to a pos_label which is a string, for
     example '1', which may occur if the class labels are strings.
+
+    TLDR: For best results, use sequential digits for the classes.
     """
     # pylint: disable=too-many-arguments
     def __init__(self, distinguisher: Estimator, classifier_pos: Estimator,
@@ -41,9 +44,15 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         self.classifier_pos = sklearn.base.clone(classifier_pos)
         self.classifier_neg = sklearn.base.clone(classifier_neg)
         self.pos_label = pos_label
+        self.encoder = sklearn.preprocessing.LabelEncoder()
 
         assert voting in ('hard', 'soft')
         self.voting = voting
+
+    @property
+    def classes_(self) -> np.ndarray:
+        """The classes excluding the the distinguisher."""
+        return self.encoder.classes_
 
     def fit(self, X, y: np.ndarray) -> None:
         """Fit the distinguishers and sub-classifiers on the provided data.
@@ -57,6 +66,7 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         assert self.pos_label in y[:, 0]
         self.distinguisher.fit(X, y[:, 0])
 
+        self.encoder.fit(y[:, 1])
         mask = y[:, 0] == self.pos_label
         self.classifier_pos.fit(X[mask], y[mask, 1])
         self.classifier_neg.fit(X[~mask], y[~mask, 1])
@@ -72,9 +82,9 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         probs = self.predict_proba_soft(X)
         mask = probs[:, 0] > 0.5
 
-        result = np.ndarray((len(probs), 2), dtype=int)
+        result = np.ndarray((len(probs), 2), dtype=object)
         result[:, 0] = np.where(mask, 1, -1)
-        result[:, 1] = np.argmax(probs[:, 1:], axis=1)
+        result[:, 1] = self.encoder.classes_[np.argmax(probs[:, 1:], axis=1)]
         return result
 
     def predict(self, X) -> np.ndarray:
@@ -96,8 +106,10 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         predictions[mask] = pos_predictions
         predictions[~mask] = neg_predictions
 
+        print(predictions, predictions.dtype, choice.dtype, choice)
+
         assert predictions.dtype == choice.dtype
-        return np.array(list(zip(choice, predictions)))
+        return np.array(list(zip(choice, predictions)), dtype=choice.dtype)
 
     def predict_proba_soft(self, X) -> np.ndarray:
         """Return the probability predictions, weighted according to the
