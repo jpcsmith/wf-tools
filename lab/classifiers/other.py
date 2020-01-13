@@ -66,7 +66,16 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         to the distinguisher.
 
         This is invoked by predict when the voting type is soft.
+
+        Fixes 1 for the positive class and -1 for the negative class.
         """
+        probs = self.predict_proba_soft(X)
+        mask = probs[:, 0] > 0.5
+
+        result = np.ndarray((len(probs), 2), dtype=int)
+        result[:, 0] = np.where(mask, 1, -1)
+        result[:, 1] = np.argmax(probs[:, 1:], axis=1)
+        return result
 
     def predict(self, X) -> np.ndarray:
         """Distinguish and predict the class using the appropriate classifer.
@@ -97,9 +106,20 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         This is invoked by predict_proba when the voting type is soft.
         """
         choice_proba = np.array(self.distinguisher.predict_proba(X))
+        choice_proba = choice_proba.reshape(len(choice_proba), 1)
+
         pos_predictions = np.array(self.classifier_pos.predict_proba(X))
         neg_predictions = np.array(self.classifier_neg.predict_proba(X))
+        n_classes = pos_predictions.shape[1]  # pylint: disable=unsubscriptable-object
 
+        predictions = (choice_proba * pos_predictions) + (
+            (1 - choice_proba) * neg_predictions)
+
+        result = np.ndarray((len(X), n_classes + 1), dtype=float)
+        result[:, 0] = choice_proba[:, 0]
+        result[:, 1:] = predictions
+
+        return result
 
     def predict_proba(self, X) -> np.ndarray:
         """Return the belief in the decision as well as in that of the various
