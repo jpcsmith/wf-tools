@@ -14,7 +14,7 @@ import numpy as np
 
 from lab.trace import Direction, Trace
 
-DEFAULT_NUM_FEATURES = 150
+DEFAULT_NUM_FEATURES = 200
 
 
 # --------------------
@@ -225,6 +225,44 @@ def in_out_fraction(overall: Trace) -> dict:
     }
 
 
+# -------------
+# SIZE FEATURES
+# -------------
+
+def total_packet_sizes(overall: Trace) -> dict:
+    """Return the total incoming, outgoing and overall packet sizes."""
+    incoming, outgoing = split_in_out(overall)
+
+    # Use absolute value in case the input sizes are signed
+    result = {
+        'total-size::in': sum(abs(pkt.size) for pkt in incoming),
+        'total-size::out': sum(abs(pkt.size) for pkt in outgoing),
+    }
+    result['total-size::overall'] = result['total-size::in'] \
+        + result['total-size::out']
+    return result
+
+
+def _packet_size_stats(trace: Trace) -> dict:
+    sizes = [pkt.size for pkt in trace]
+    return {
+        'mean': np.mean(sizes), 'var': np.var(sizes),
+        'std': np.std(sizes), 'max': np.max(sizes)
+    }
+
+
+def packet_size_stats(overall: Trace) -> dict:
+    """Return the mean, var, std, and max of the incoming, outgoing,
+    and overall packet traces.
+    """
+    incoming, outgoing = split_in_out(overall)
+    return {
+        **_prefix_keys(_packet_size_stats(incoming), 'size-stats::in'),
+        **_prefix_keys(_packet_size_stats(outgoing), 'size-stats::out'),
+        **_prefix_keys(_packet_size_stats(overall), 'size-stats::overall'),
+    }
+
+
 # ----------------
 # FEATURE FUNCTION
 # ----------------
@@ -253,6 +291,9 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
 
     all_features.update(packet_ordering_stats(trace))
     all_features.update(in_out_fraction(trace))
+
+    all_features.update(total_packet_sizes(trace))
+    all_features.update(packet_size_stats(trace))
 
     selected_features = [
         # Interarrival stats
@@ -303,6 +344,22 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
 
     # Assert on the length of the core features from the paper
     assert len(result) == 87
+
+    selected_size_features = [
+        # Total sizes
+        'total-size::in', 'total-size::out', 'total-size::overall',
+        # Size statistics
+        'size-stats::in::mean', 'size-stats::in::max', 'size-stats::in::var',
+        'size-stats::in::std',
+        'size-stats::out::mean', 'size-stats::out::max', 'size-stats::out::var',
+        'size-stats::out::std',
+        'size-stats::overall::mean', 'size-stats::overall::max',
+        'size-stats::overall::var', 'size-stats::overall::std',
+    ]
+    result.extend(all_features[feat] for feat in selected_size_features)
+
+    # Assert on the overall length of the sizes and timing features
+    assert len(result) == 102
 
     # These features are variable length, which in truth means that only one of
     # them can really be of any use, as the shift will result in strange
