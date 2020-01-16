@@ -8,6 +8,7 @@ Minor adjustments to the work of the original authors from the paper. The
 original can be found at https://github.com/jhayes14/k-FP.
 """
 import math
+import itertools
 from typing import Tuple, Union, Sequence
 
 import numpy as np
@@ -295,44 +296,7 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     all_features.update(total_packet_sizes(trace))
     all_features.update(packet_size_stats(trace))
 
-    selected_features = [
-        # Interarrival stats
-        'interarrival::in::max', 'interarrival::out::max',
-        'interarrival::overall::max', 'interarrival::in::mean',
-        'interarrival::out::mean', 'interarrival::overall::mean',
-        'interarrival::in::std', 'interarrival::out::std',
-        'interarrival::overall::std', 'interarrival::in::percentile-75',
-        'interarrival::out::percentile-75',
-        'interarrival::overall::percentile-75',
-        # Timestamp percentiles
-        'time::in::percentile-25', 'time::in::percentile-50',
-        'time::in::percentile-75', 'time::in::percentile-100',
-        'time::out::percentile-25', 'time::out::percentile-50',
-        'time::out::percentile-75', 'time::out::percentile-100',
-        'time::overall::percentile-25', 'time::overall::percentile-50',
-        'time::overall::percentile-75', 'time::overall::percentile-100',
-        # Packet counts
-        'packet-counts::in', 'packet-counts::out', 'packet-counts::overall',
-        # First and last 30 packet concentrations
-        'first-30::packet-counts::in', 'first-30::packet-counts::out',
-        'last-30::packet-counts::in', 'last-30::packet-counts::out',
-        # Some concentration stats
-        'concentration-stats::std::out', 'concentration-stats::mean::out',
-        # Some packets per-second stats
-        'pps::mean', 'pps::std',
-        # Packet ordering statistics
-        'packet-order::out::mean', 'packet-order::in::mean',
-        'packet-order::out::std', 'packet-order::in::std',
-        # Concentration stats ctd.
-        'concentration-stats::median::out',
-        # Remaining packet per second stats
-        'pps::median', 'pps::min', 'pps::max',
-        # Concentration stats ctd.
-        'concentration-stats::max::out',
-        # Fraction of packets in each direction
-        'fraction-incoming', 'fraction-outgoing',
-    ]
-    result = [all_features[feat] for feat in selected_features]
+    result = [all_features[feat] for feat in DEFAULT_TIMING_FEATURES]
 
     # Alternate concentration feature
     result.extend(alternate_concentration(concentrations, 20))
@@ -345,18 +309,7 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     # Assert on the length of the core features from the paper
     assert len(result) == 87
 
-    selected_size_features = [
-        # Total sizes
-        'total-size::in', 'total-size::out', 'total-size::overall',
-        # Size statistics
-        'size-stats::in::mean', 'size-stats::in::max', 'size-stats::in::var',
-        'size-stats::in::std',
-        'size-stats::out::mean', 'size-stats::out::max', 'size-stats::out::var',
-        'size-stats::out::std',
-        'size-stats::overall::mean', 'size-stats::overall::max',
-        'size-stats::overall::var', 'size-stats::overall::std',
-    ]
-    result.extend(all_features[feat] for feat in selected_size_features)
+    result.extend(all_features[feat] for feat in DEFAULT_SIZE_FEATURES)
 
     # Assert on the overall length of the sizes and timing features
     assert len(result) == 102
@@ -371,3 +324,62 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     result += [0] * (max_size - len(result))
 
     return tuple(result[:max_size])
+
+
+DEFAULT_TIMING_FEATURES = [
+    # Interarrival stats
+    'interarrival::in::max', 'interarrival::out::max',
+    'interarrival::overall::max', 'interarrival::in::mean',
+    'interarrival::out::mean', 'interarrival::overall::mean',
+    'interarrival::in::std', 'interarrival::out::std',
+    'interarrival::overall::std', 'interarrival::in::percentile-75',
+    'interarrival::out::percentile-75', 'interarrival::overall::percentile-75',
+    # Timestamp percentiles
+    'time::in::percentile-25', 'time::in::percentile-50',
+    'time::in::percentile-75', 'time::in::percentile-100',
+    'time::out::percentile-25', 'time::out::percentile-50',
+    'time::out::percentile-75', 'time::out::percentile-100',
+    'time::overall::percentile-25', 'time::overall::percentile-50',
+    'time::overall::percentile-75', 'time::overall::percentile-100',
+    # Packet counts
+    'packet-counts::in', 'packet-counts::out', 'packet-counts::overall',
+    # First and last 30 packet concentrations
+    'first-30::packet-counts::in', 'first-30::packet-counts::out',
+    'last-30::packet-counts::in', 'last-30::packet-counts::out',
+    # Some concentration stats
+    'concentration-stats::std::out', 'concentration-stats::mean::out',
+    # Some packets per-second stats
+    'pps::mean', 'pps::std',
+    # Packet ordering statistics
+    'packet-order::out::mean', 'packet-order::in::mean',
+    'packet-order::out::std', 'packet-order::in::std',
+    # Concentration stats ctd.
+    'concentration-stats::median::out',
+    # Remaining packet per second stats
+    'pps::median', 'pps::min', 'pps::max',
+    # Concentration stats ctd.
+    'concentration-stats::max::out',
+    # Fraction of packets in each direction
+    'fraction-incoming', 'fraction-outgoing',
+]
+
+DEFAULT_SIZE_FEATURES = [
+    # Total sizes
+    'total-size::in', 'total-size::out', 'total-size::overall',
+    # Size statistics
+    'size-stats::in::mean', 'size-stats::in::max', 'size-stats::in::var',
+    'size-stats::in::std',
+    'size-stats::out::mean', 'size-stats::out::max', 'size-stats::out::var',
+    'size-stats::out::std',
+    'size-stats::overall::mean', 'size-stats::overall::max',
+    'size-stats::overall::var', 'size-stats::overall::std',
+]
+
+ALL_DEFAULT_FEATURES = list(itertools.chain(
+    DEFAULT_TIMING_FEATURES,
+    [f'alt-conc::{i}' for i in range(20)],
+    [f'alt-pps::{i}' for i in range(20)],
+    ['alt-pps::sum'],
+    DEFAULT_SIZE_FEATURES,
+    [f'conc-then-pps::{i}' for i in range(DEFAULT_NUM_FEATURES - 102)]
+))
