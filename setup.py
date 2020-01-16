@@ -18,7 +18,7 @@ DEPENDENCIES = [
     'selenium==4.0.0a1',
     'typing-extensions',
     'scipy',
-    'sklearn',
+    'scikit-learn>=0.22',
 ]
 
 
