@@ -4,6 +4,7 @@ from typing import TypeVar
 import numpy as np
 import sklearn
 import sklearn.preprocessing
+from sklearn import metrics
 
 
 Estimator = TypeVar('Estimator')
@@ -161,3 +162,12 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
         result[:, 0] = choice_proba
 
         return result
+
+    def score(self, X, y, sample_weight=None) -> float:
+        """Return the mean accuracy of the given test data and labels.
+
+        The score for the conditional classifier only considers the final
+        labels, and not the intermediate distinguishing labels.
+        """
+        return metrics.accuracy_score(
+            y[:, 1], self.predict(X)[:, 1], sample_weight=sample_weight)
