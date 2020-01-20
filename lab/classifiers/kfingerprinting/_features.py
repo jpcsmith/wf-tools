@@ -314,16 +314,25 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     # Assert on the overall length of the sizes and timing features
     assert len(result) == 102
 
-    # These features are variable length, which in truth means that only one of
-    # them can really be of any use, as the shift will result in strange
-    # comparisons of the features.
-    result.extend(concentrations)
-    result.extend(pps)
+    remaining_space = max_size - len(result)
 
-    # Extend the features if necessary, NO-OP if already long enough
-    result += [0] * (max_size - len(result))
+    # Align the concentrations and pps features, by allocating each roughly
+    # Half of the remaining space, padding with zero otherwise
+    if remaining_space > 0:
+        _extend_exactly(result, concentrations, (remaining_space + 1) // 2)
+        _extend_exactly(result, pps, remaining_space // 2)
 
+    assert len(result) == max_size
     return tuple(result[:max_size])
+
+
+def _extend_exactly(lhs, rhs, amount: int, padding: int = 0):
+    """Extend lhs, with exactly amount elements from rhs.  If there are
+    not enough elements, lhs is padded to the correct amount with padding.
+    """
+    padding_len = amount - len(rhs)  # May be negative
+    lhs.extend(rhs[:amount])
+    lhs.extend([padding] * padding_len)  # NO-OP if padding_len is negative
 
 
 DEFAULT_TIMING_FEATURES = [
