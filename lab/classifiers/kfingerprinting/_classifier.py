@@ -14,11 +14,14 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
 from sklearn.base import BaseEstimator, ClassifierMixin
-
+from sklearn.utils import check_array
+from sklearn.utils.multiclass import unique_labels
 
 Element = TypeVar('Element')
 
@@ -36,9 +39,16 @@ def _unique_element(items: Iterable[Element]) -> Optional[Element]:
 class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     """k-fingerprinting website classifier.
 
-    Utilises a RandomForestClassifier to gather leaf indices then predicts a
-    class or indeterminate using k-nearest neighbour and the Hamming distance
-    between the leaf indices of the training data and that of the test data.
+    Utilises a RandomForestClassifier to gather leaf indices then
+    predicts a class or indeterminate using k-nearest neighbour and the
+    Hamming distance between the leaf indices of the training data and
+    that of the test data.
+
+    The classifier may report that it is unable to make a prediction.
+    This is returned as -1 for the provided sample.  To remain
+    compatible with sklearn, the classifier therefore only accepts
+    numeric labels which do not include -1.
+
 
     Parameters
     ----------
@@ -58,31 +68,44 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     scalable website fingerprinting technique." 25th {USENIX} Security
     Symposium ({USENIX} Security 16). 2016.
     """
+    # pylint: disable=too-many-arguments,too-many-instance-attributes
     def __init__(self, forest: Optional[RandomForestClassifier] = None,
                  n_neighbours: int = 2, n_jobs=None, random_state=None,
                  unknown_label: Union[str, int, None] = None):
-        self._logger = logging.getLogger(__name__)
-        self.forest = forest if forest is not None else RandomForestClassifier(
-            n_estimators=150, oob_score=True, n_jobs=n_jobs,
-            random_state=random_state)
+        self.forest = forest
         self.n_neighbours = n_neighbours
-        self._graph: Optional[NearestNeighbors] = None
-        self._labels = None
+        self.n_jobs = n_jobs
+        self.random_state = random_state
         self.unknown_label = unknown_label
 
     def fit(self, X, y):  # pylint: disable=invalid-name
         """Fit the estimator according to the given training data."""
-        self._logger.info("Fitting the random forest on %d samples.", len(X))
-        self.forest.fit(X, y)
+        logger = logging.getLogger(__name__)
+        logger.info("Fitting the random forest on %d samples.", len(X))
 
-        self._graph = NearestNeighbors(
-            n_neighbors=self.n_neighbours,
-            metric='hamming',
-            n_jobs=self.forest.n_jobs)
-        self._logger.info("Fitting the nearest neighbor graph.")
-        self._graph.fit(self.forest.apply(X))
-        self._labels = pd.Series(y)
-        self._logger.info("Model fitting complete.")
+        X = check_array(X, accept_sparse=False, dtype=None)
+        y = check_array(y, accept_sparse=False, ensure_2d=False, dtype=None)
+
+        # pylint: disable=attribute-defined-outside-init
+        self.classes_ = unique_labels(y)
+        self.random_state_ = sklearn.utils.check_random_state(self.random_state)
+        self.forest_ = (self.forest if self.forest is not None
+                        else RandomForestClassifier(
+                            n_estimators=150, oob_score=True,
+                            n_jobs=self.n_jobs, random_state=self.random_state_)
+                        )
+
+        self.forest_.fit(X, y)
+
+        logger.info("Fitting the nearest neighbor graph.")
+        self.graph_ = NearestNeighbors(n_neighbors=self.n_neighbours,
+                                       metric='hamming', n_jobs=self.n_jobs)
+        self.graph_.fit(self.forest_.apply(X))
+
+        self.labels_ = pd.Series(y)
+
+        logger.info("Model fitting complete.")
+        return self
 
     def predict(self, X, n_neighbors: Optional[int] = None):
         """Predict the class for X.
@@ -90,20 +113,24 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         The predicted class is the unanimous label of the k-closest neighbours
         or None.
         """
-        assert self._graph is not None
-        assert self._labels is not None
-        self._logger.debug("Determining leaves for the prediction.")
-        leaves = self.forest.apply(X)
-        self._logger.debug("Identifying neighbours of the leaves.")
-        neighbourhoods = self._graph.kneighbors(leaves, return_distance=False,
+        sklearn.utils.validation.check_is_fitted(
+            self, ['graph_', 'labels_', 'forest_'])
+
+        logger = logging.getLogger(__name__)
+        logger.debug("Determining leaves for the prediction.")
+
+        leaves = self.forest_.apply(X)
+
+        logger.debug("Identifying neighbours of the leaves.")
+        neighbourhoods = self.graph_.kneighbors(leaves, return_distance=False,
                                                 n_neighbors=n_neighbors)
         result = []
-        self._logger.debug("Formulating decision.")
+        logger.debug("Formulating decision.")
         for neighbours_list in neighbourhoods:
             # breakpoint()
-            labels = [self._labels.iloc[index] for index in neighbours_list]
+            labels = [self.labels_.iloc[index] for index in neighbours_list]
             prediction = _unique_element(labels)
             # Explicitly check for None since 0/False are valid predictions
             result.append(prediction if prediction is not None
                           else self.unknown_label)
-        return result
+        return np.array(result)
