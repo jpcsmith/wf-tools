@@ -7,15 +7,10 @@
 The original can be found at https://github.com/jhayes14/k-FP.
 """
 import logging
-from typing import (
-    Optional,
-    Iterable,
-    TypeVar,
-    Union,
-)
+import warnings
+from typing import Optional, Iterable, TypeVar, Union
 
 import numpy as np
-import pandas as pd
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import NearestNeighbors
@@ -44,23 +39,25 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     Hamming distance between the leaf indices of the training data and
     that of the test data.
 
-    The classifier may report that it is unable to make a prediction.
-    This is returned as -1 for the provided sample.  To remain
-    compatible with sklearn, the classifier therefore only accepts
-    numeric labels which do not include -1.
+    Does not currently support 2-dimensional labels.
 
 
     Parameters
     ----------
     forest :
-        Specifies the random forest classifier to use as the underlying forest.
-        If absent, one is created with 150 trees and oob_scoring, as well as
-        using the n_jobs and random_state provided.  If provided in addtition
-        to n_jobs and random_state, they are ignored.
+        Specifies the random forest classifier to use as the underlying
+        forest.  If absent, one is created with 150 trees and
+        oob_scoring, as well as using the n_jobs and random_state
+        provided.  If provided in addtition to n_jobs and random_state,
+        they are ignored.
 
     n_neighbours :
         The number of nearest neighbours to use for the prediction.
 
+    unknown_label :
+        The label to use for unknown predictions.  This is by default
+        -1.  A warning is issues if the type of the unknown label does
+        not match the type of the labels.
 
     References
     ----------
@@ -71,7 +68,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     # pylint: disable=too-many-arguments,too-many-instance-attributes
     def __init__(self, forest: Optional[RandomForestClassifier] = None,
                  n_neighbours: int = 2, n_jobs=None, random_state=None,
-                 unknown_label: Union[str, int, None] = None):
+                 unknown_label: Union[str, int] = -1):
         self.forest = forest
         self.n_neighbours = n_neighbours
         self.n_jobs = n_jobs
@@ -80,11 +77,18 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
     def fit(self, X, y):  # pylint: disable=invalid-name
         """Fit the estimator according to the given training data."""
-        logger = logging.getLogger(__name__)
-        logger.info("Fitting the random forest on %d samples.", len(X))
-
         X = check_array(X, accept_sparse=False, dtype=None)
         y = check_array(y, accept_sparse=False, ensure_2d=False, dtype=None)
+
+        # Check that the unknown label is compatible with the other labels
+        if y.dtype != np.dtype(type(self.unknown_label)):
+            warnings.warn(("The datatype of the labels ({}) does not match the "
+                           "datatype of the unknown label ({}). A conversion "
+                           "or error may occur.").format(
+                               y.dtype, np.dtype(type(self.unknown_label))))
+
+        logger = logging.getLogger(__name__)
+        logger.info("Fitting the random forest on %d samples.", len(X))
 
         # pylint: disable=attribute-defined-outside-init
         self.classes_ = unique_labels(y)
@@ -101,8 +105,11 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         self.graph_ = NearestNeighbors(n_neighbors=self.n_neighbours,
                                        metric='hamming', n_jobs=self.n_jobs)
         self.graph_.fit(self.forest_.apply(X))
-
-        self.labels_ = pd.Series(y)
+        # We need the labels because the graph returns indices into the
+        # population matrix, which are the same indices associated with
+        # the labeles
+        assert isinstance(y, np.ndarray)
+        self.labels_ = y
 
         logger.info("Model fitting complete.")
         return self
@@ -122,13 +129,13 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         leaves = self.forest_.apply(X)
 
         logger.debug("Identifying neighbours of the leaves.")
-        neighbourhoods = self.graph_.kneighbors(leaves, return_distance=False,
-                                                n_neighbors=n_neighbors)
-        result = []
+        neighbourhoods = self.graph_.kneighbors(
+            leaves, return_distance=False, n_neighbors=n_neighbors)
+
         logger.debug("Formulating decision.")
+        result = []
         for neighbours_list in neighbourhoods:
-            # breakpoint()
-            labels = [self.labels_.iloc[index] for index in neighbours_list]
+            labels = [self.labels_[index] for index in neighbours_list]
             prediction = _unique_element(labels)
             # Explicitly check for None since 0/False are valid predictions
             result.append(prediction if prediction is not None
