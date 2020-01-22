@@ -1,24 +1,38 @@
 """Combination and other classifiers."""
+from typing import Sequence, Tuple, Any
+
 import numpy as np
 import sklearn
 import sklearn.preprocessing
-from sklearn import metrics
+from sklearn.utils import check_array, validation
+from sklearn.utils.metaestimators import _BaseComposition
+from sklearn.utils import multiclass
 
 
-class ConditionalClassifier(sklearn.base.BaseEstimator):
-    """
+class ConditionalClassifier(_BaseComposition, sklearn.base.ClassifierMixin):
+    """Performs classification using a distinguisher to first identify
+    which of two classifiers to use.
 
     Parameters
     ----------
-    distinguisher :
-        A binary classifier that will determine which of classifier_pos or
-        classifier_neg to use.
-    classifier_pos :
-        Fitted on, and makes predictions for only those samples identified
-        as pos_label.
-    classifier_neg :
-        Fitted on, and makes predictions for only those samples identified
-        as not being pos_label.
+    estimators :
+        A sequence of 1 to 3 estimators described below, described by
+        (name, estimator). If a single estimator is provided in the
+        sequence, then it is cloned and use for all three estimators.
+        If two are provided, then the first is used as the distinguisher,
+        and the second is used as both the positive and negative
+        classifiers.  Otherwise, the third is used as the negative
+        classifier.
+
+        distinguisher :
+            A binary classifier that will determine which of classifier_pos or
+            classifier_neg to use.
+        pos :
+            Fitted on, and makes predictions for only those samples identified
+            as pos_label.
+        neg :
+            Fitted on, and makes predictions for only those samples identified
+            as not being pos_label.
 
     Note
     ----
@@ -27,21 +41,57 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
     will therefore not compare truthily to a pos_label which is a string, for
     example '1', which may occur if the class labels are strings.
     """
-    # pylint: disable=too-many-arguments
-    def __init__(self, distinguisher, classifier_pos, classifier_neg,
-                 pos_label=1):
-        self.distinguisher = distinguisher
-        self.classifier_pos = classifier_pos
-        self.classifier_neg = classifier_neg
+
+    _required_parameters = ['estimators']
+
+    def __init__(self, estimators: Sequence[Tuple[str, Any]], pos_label=1):
+        super().__init__()
+        self.estimators = estimators
         self.pos_label = pos_label
-        self.encoder = sklearn.preprocessing.LabelEncoder()
+
+    def _more_tags(self):
+        return {'multioutput_only': True}
+
+    def get_params(self, deep=True) -> dict:
+        """Get parameters for this estimator."""
+        return self._get_params('estimators', deep=deep)
+
+    def set_params(self, **kwargs):
+        """Set the parameters of this estimator."""
+        self._set_params('estimators', **kwargs)
+        return self
+
+    def _clone_estimators(self, clone: bool) -> Sequence[Tuple[str, int]]:
+        from sklearn import base
+        from itertools import chain, repeat
+
+        assert 1 <= len(self.estimators) <= 3
+        estimators = chain(self.estimators, repeat(self.estimators[-1]))
+        return [
+            (f'{name}_{tag}', base.clone(estimator) if clone else estimator)
+            for tag, (name, estimator) in zip(['distinguisher', 'pos', 'neg'],
+                                              estimators)
+        ]
 
     @property
-    def classes_(self) -> np.ndarray:
-        """The classes excluding the the distinguisher."""
-        return self.encoder.classes_
+    def distinguisher_(self):
+        """Return the distinguishing estimator."""
+        validation.check_is_fitted(self, ['estimators_'])
+        return self.estimators_[0][1]
 
-    def fit(self, X, y: np.ndarray) -> None:
+    @property
+    def pos_classifier_(self):
+        """Return the classifier used for the positive samples."""
+        validation.check_is_fitted(self, ['estimators_'])
+        return self.estimators_[1][1]
+
+    @property
+    def neg_classifier_(self):
+        """Return the classifier used for the negative samples."""
+        validation.check_is_fitted(self, ['estimators_'])
+        return self.estimators_[2][1]
+
+    def fit(self, X, y, clone: bool = True) -> None:
         """Fit the distinguishers and sub-classifiers on the provided data.
 
         Parameters
@@ -50,24 +100,39 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
             A 2d-array where the first column has binary predictions to fit
             the distinguisher.
         """
-        assert self.pos_label in y[:, 0]
-        self.distinguisher.fit(X, y[:, 0])
+        X = check_array(X, accept_sparse=False, dtype='numeric')
+        y = check_array(y, accept_sparse=False, ensure_2d=True, dtype='numeric')
+        multiclass.check_classification_targets(y)
+        assert multiclass.type_of_target(y[:, 0]) == 'binary'
 
-        self.encoder.fit(y[:, 1])
+        # pylint: disable=attribute-defined-outside-init
+        self.estimators_ = self._clone_estimators(clone)
+        self.classes_ = np.unique(y, axis=0)
+
+        if self.pos_label not in multiclass.unique_labels(y[:, 0]):
+            raise ValueError("pos_label={!r} is not a valid label: {!r}".format(
+                self.pos_label, multiclass.unique_labels(y[:, 0])))
+
+        self.distinguisher_.fit(X, y[:, 0])
+
         mask = y[:, 0] == self.pos_label
-        self.classifier_pos.fit(X[mask], y[mask, 1])
-        self.classifier_neg.fit(X[~mask], y[~mask, 1])
+        self.pos_classifier_.fit(X[mask], y[mask, 1])
+        self.neg_classifier_.fit(X[~mask], y[~mask, 1])
 
     def predict(self, X) -> np.ndarray:
         """Distinguish and predict the class using the appropriate classifer.
 
         Return an array of size (n_samples, 2).
         """
-        choice = np.array(self.distinguisher.predict(X))
+        validation.check_is_fitted(self, ['estimators_', 'classes_'])
+
+        X = check_array(X, accept_sparse=False, dtype=None)
+
+        choice = np.asarray(self.distinguisher_.predict(X))
         mask = choice == self.pos_label
 
-        pos_predictions = np.array(self.classifier_pos.predict(X[mask]))
-        neg_predictions = np.array(self.classifier_neg.predict(X[~mask]))
+        pos_predictions = np.array(self.pos_classifier_.predict(X[mask]))
+        neg_predictions = np.array(self.neg_classifier_.predict(X[~mask]))
 
         assert pos_predictions.dtype == neg_predictions.dtype
         predictions = np.ndarray(len(X), dtype=pos_predictions.dtype)
@@ -76,40 +141,3 @@ class ConditionalClassifier(sklearn.base.BaseEstimator):
 
         assert predictions.dtype == choice.dtype
         return np.array(list(zip(choice, predictions)), dtype=choice.dtype)
-
-    def predict_proba(self, X) -> np.ndarray:
-        """Return the belief in the decision as well as in that of the various
-        classes.
-
-        The resulting ndarray is of shape (n_samples, n_classes + 1), where the
-        first column specifies the belief in the decision, and the remaining
-        specify the beliefs in the classes.
-        """
-        choice_proba = np.array(self.distinguisher.predict_proba(X))
-        mask = choice_proba > 0.5
-
-        pos_predictions = np.array(self.classifier_pos.predict_proba(X[mask]))
-        neg_predictions = np.array(self.classifier_neg.predict_proba(X[~mask]))
-
-        assert pos_predictions.dtype == neg_predictions.dtype \
-            == choice_proba.dtype
-        # pylint: disable=unsubscriptable-object
-        assert pos_predictions.shape[1] == neg_predictions.shape[1]
-        n_classes = pos_predictions.shape[1]
-        # pylint: enable=unsubscriptable-object
-
-        result = np.ndarray((len(X), n_classes + 1), dtype=float)
-        result[mask, 1:] = pos_predictions
-        result[~mask, 1:] = neg_predictions
-        result[:, 0] = choice_proba
-
-        return result
-
-    def score(self, X, y, sample_weight=None) -> float:
-        """Return the mean accuracy of the given test data and labels.
-
-        The score for the conditional classifier only considers the final
-        labels, and not the intermediate distinguishing labels.
-        """
-        return metrics.accuracy_score(
-            y[:, 1], self.predict(X)[:, 1], sample_weight=sample_weight)
