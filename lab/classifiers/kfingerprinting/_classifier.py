@@ -93,7 +93,8 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         # pylint: disable=attribute-defined-outside-init
         self.classes_ = unique_labels(y)
         self.random_state_ = sklearn.utils.check_random_state(self.random_state)
-        self.forest_ = (self.forest if self.forest is not None
+        self.forest_ = (sklearn.base.clone(self.forest)
+                        if self.forest is not None
                         else RandomForestClassifier(
                             n_estimators=150, oob_score=True,
                             n_jobs=self.n_jobs, random_state=self.random_state_)
