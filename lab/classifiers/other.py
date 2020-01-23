@@ -3,13 +3,12 @@ from typing import Sequence, Tuple, Any
 
 import numpy as np
 import sklearn
-import sklearn.preprocessing
 from sklearn.utils import check_array, validation
 from sklearn.utils.metaestimators import _BaseComposition
 from sklearn.utils import multiclass
 
 
-class ConditionalClassifier(_BaseComposition, sklearn.base.ClassifierMixin):
+class ConditionalClassifier(_BaseComposition):
     """Performs classification using a distinguisher to first identify
     which of two classifiers to use.
 
@@ -43,6 +42,7 @@ class ConditionalClassifier(_BaseComposition, sklearn.base.ClassifierMixin):
     """
 
     _required_parameters = ['estimators']
+    _estimator_type = 'classifier'
 
     def __init__(self, estimators: Sequence[Tuple[str, Any]], pos_label=1):
         super().__init__()
@@ -141,3 +141,12 @@ class ConditionalClassifier(_BaseComposition, sklearn.base.ClassifierMixin):
 
         assert predictions.dtype == choice.dtype
         return np.array(list(zip(choice, predictions)), dtype=choice.dtype)
+
+    def score(self, X, y, sample_weight=None) -> float:
+        """Compute the accuracy for the final classification.  y is a
+        2-dimensional array.
+        """
+        y = check_array(y, accept_sparse=False, ensure_2d=True)
+
+        return sklearn.metrics.accuracy_score(
+            y[:, 1], self.predict(X)[:, 1], sample_weight=sample_weight)
