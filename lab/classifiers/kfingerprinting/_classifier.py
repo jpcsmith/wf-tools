@@ -88,7 +88,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
                                y.dtype, np.dtype(type(self.unknown_label))))
 
         logger = logging.getLogger(__name__)
-        logger.info("Fitting the random forest on %d samples.", len(X))
+        logger.debug("Fitting the random forest on %d samples.", len(X))
 
         # pylint: disable=attribute-defined-outside-init
         self.classes_ = unique_labels(y)
@@ -102,18 +102,30 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
         self.forest_.fit(X, y)
 
-        logger.info("Fitting the nearest neighbor graph.")
+        logger.debug("Fitting the nearest neighbor graph.")
         self.graph_ = NearestNeighbors(n_neighbors=self.n_neighbours,
                                        metric='hamming', n_jobs=self.n_jobs)
-        self.graph_.fit(self.forest_.apply(X))
+
+        self.graph_.fit(self._apply(X))
+
         # We need the labels because the graph returns indices into the
         # population matrix, which are the same indices associated with
         # the labeles
         assert isinstance(y, np.ndarray)
         self.labels_ = y
 
-        logger.info("Model fitting complete.")
+        logger.debug("Model fitting complete.")
         return self
+
+    def _apply(self, X):
+        """Call apply on the forest."""
+        # Run apply with a single job. There is a bug when using multiple jobs
+        # and the array being read only.
+        # See: https://github.com/scikit-learn/scikit-learn/issues/7981
+        self.forest_.n_jobs = 1
+        leaves = self.forest_.apply(X)
+        self.forest_.n_jobs = self.n_jobs
+        return leaves
 
     def predict(self, X, n_neighbors: Optional[int] = None):
         """Predict the class for X.
@@ -127,7 +139,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         logger = logging.getLogger(__name__)
         logger.debug("Determining leaves for the prediction.")
 
-        leaves = self.forest_.apply(X)
+        leaves = self._apply(X)
 
         logger.debug("Identifying neighbours of the leaves.")
         neighbourhoods = self.graph_.kneighbors(
