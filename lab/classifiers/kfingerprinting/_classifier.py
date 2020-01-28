@@ -106,7 +106,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         self.graph_ = NearestNeighbors(n_neighbors=self.n_neighbours,
                                        metric='hamming', n_jobs=self.n_jobs)
 
-        self.graph_.fit(self._apply(X))
+        self.graph_.fit(self.forest_.apply(X))
 
         # We need the labels because the graph returns indices into the
         # population matrix, which are the same indices associated with
@@ -116,16 +116,6 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
         logger.debug("Model fitting complete.")
         return self
-
-    def _apply(self, X):
-        """Call apply on the forest."""
-        # Run apply with a single job. There is a bug when using multiple jobs
-        # and the array being read only.
-        # See: https://github.com/scikit-learn/scikit-learn/issues/7981
-        self.forest_.n_jobs = 1
-        leaves = self.forest_.apply(X)
-        self.forest_.n_jobs = self.n_jobs
-        return leaves
 
     def predict(self, X, n_neighbors: Optional[int] = None):
         """Predict the class for X.
@@ -139,7 +129,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         logger = logging.getLogger(__name__)
         logger.debug("Determining leaves for the prediction.")
 
-        leaves = self._apply(X)
+        leaves = self.forest_.apply(X)
 
         logger.debug("Identifying neighbours of the leaves.")
         neighbourhoods = self.graph_.kneighbors(
