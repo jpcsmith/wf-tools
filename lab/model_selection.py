@@ -11,6 +11,17 @@ class SplitUnion:
 
     splitters is a sequence of (str, CV splitter).  Return as many splits
     as the shortest splitter.
+
+    Example:
+
+    ```
+    SplitUnion([
+        ('monitored', StratifiedShuffleSplit(n_splits=1, train_size=0.6)),
+        ('unmonitored', ShuffleSplit(n_splits=1, train_size=2000))
+    ]).split(X, y, masks=[
+        ('monitored', maskA), ('unmonitored', ~maskA)
+    ])
+    ```
     """
     def __init__(self, splitters: Sequence[Tuple[str, Any]]):
         self.splitters = splitters
