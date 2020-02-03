@@ -20,6 +20,7 @@ DEPENDENCIES = [
     'typing-extensions',
     'scipy',
     'scikit-learn>=0.22',
+    'tables',
 ]
 
 
