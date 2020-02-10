@@ -21,7 +21,7 @@ DEPENDENCIES = [
     'scipy',
     'scikit-learn>=0.22',
     'tables',
-    'snakemake<5.9',  # Snakemake >= 5.9 doesnt use # cores in subworkflows
+    'snakemake>=5.10',
 ]
 
 
