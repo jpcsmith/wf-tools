@@ -22,7 +22,11 @@ DEPENDENCIES = [
     'scikit-learn>=0.22',
     'tables',
     'snakemake>=5.10',
+    'matplotlib',
+    'seaborn',
 ]
+# Other dependencies include
+# - pdflatex
 
 
 setup(
