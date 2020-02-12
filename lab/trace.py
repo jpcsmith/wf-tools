@@ -2,24 +2,12 @@
 import io
 import json
 import logging
-from decimal import Decimal
+import itertools
+import subprocess
 from enum import IntEnum
-from ipaddress import (
-    IPv4Network,
-    IPv6Network,
-    ip_address,
-)
+from ipaddress import IPv4Network, IPv6Network, ip_address
 from typing import (
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
+    Iterable, Iterator, List, NamedTuple, Optional, Sequence, Set, Tuple, Union,
 )
 import dataclasses
 from dataclasses import dataclass
@@ -145,91 +133,55 @@ def _packets_with_endpoint(packets: Iterable, client: str) -> Iterator:
             yield packet
 
 
-class PcapToTraceConverter:
-    """Converts pcaps to `Trace`s. Allows caching the client IP address between
-    traces to recover from failed client IP deductions.
+def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
+    """Determines the IP address of the client from the sequence of packets.
+
+    Raises ClientIndeterminable on failure.
     """
-    def __init__(self, cache_client_ip: bool = False,
-                 client_subnet: Optional[IPNetworkType] = None):
-        self.cache_client_ip = cache_client_ip
-        self.client_subnet = client_subnet
-        self._cache: Set[str] = set()
-        self._ip_stats: Dict['str', int] = {}
-        self._packet_stats: Dict['str', List[int]] = {'pcap': [], 'trace': []}
+    # The client must of course be one of the senders
+    unique_ips = packets['ip.src'].unique()
+    candidates = [ip for ip in unique_ips if ip_address(ip) in client_subnet]
 
-    @property
-    def cache(self) -> Set[str]:
-        """The read-only cache of previously seen client IP addresses."""
-        return self._cache
+    if not candidates:
+        raise ClientIndeterminable("No source IPs were in the subnet.")
+    if len(candidates) > 1:
+        raise ClientIndeterminable(f"Too many client candidates {candidates}.")
+    return candidates[0]
 
-    def add_to_cache(self, ip_addr: str) -> None:
-        """Adds the provided ip_addr to the cache."""
-        self._cache.add(ip_addr)
 
-    def _client_from_cache(self, packets: Iterable) -> Optional[str]:
-        is_present = {client: False for client in self.cache}
+def pcap_to_trace(pcap: bytes, client_subnet: IPNetworkType) \
+        -> Tuple[Trace, Sequence[scapy.all.Packet]]:
+    """Converts a pcap to a packet trace."""
+    packets = load_pcap(pcap, str(client_subnet))
+    client = _determine_client_ip(packets, client_subnet)
 
-        for client in self.cache:
-            is_present[client] = any(_has_endpoint(ip_layer, client)
-                                     for ip_layer in _ip_layers(packets))
+    packets['direction'] = Direction.OUT
+    packets['direction'] = packets['direction'].where(
+        packets['ip.src'] == client, Direction.IN)
 
-        result = [client for client in self.cache if is_present[client]]
-        if len(result) == 1:
-            return result[0]
+    zero_time = packets['frame.time_epoch'].iloc[0]
+    packets['frame.time_epoch'] = packets['frame.time_epoch'] - zero_time
 
-        if not result:
-            _LOGGER.debug("No IPs from cache %s in trace.", self.cache)
-        else:
-            _LOGGER.debug("Multiple IPs from cache %s in trace.", self.cache)
-        return None
+    trace = [Packet(*fields) for fields in zip(
+        packets['frame.time_epoch'], packets['direction'], packets['ip.len'])]
+    return trace, packets
 
-    def _determine_client_ip(self, packets: Iterable) -> str:
-        """Determines the IP address of the client from the sequence of packets.
 
-        Raises ClientIndeterminable on failure.
-        """
-        packet_list = list(packets)
-        client = (_common_ip(packet_list, self.client_subnet)
-                  or _syn_originator(packet_list))
+def load_pcap(pcap: bytes, client_subnet: str) -> pd.DataFrame:
+    """Load the pcap into a dataframe.  Packets are filtered to those
+    with an endpoint in client_subnet.
+    """
+    fields = ['frame.time_epoch', 'ip.src', 'ip.dst', 'ip.len', 'udp.stream',
+              'tcp.stream']
+    command = ['tshark', '-r', '-',
+               '-Y', f'ip.src == {client_subnet} or ip.dst == {client_subnet}',
+               '-Tfields', '-E', 'header=y', '-E', 'separator=,'] + list(
+        itertools.chain.from_iterable(('-e', field) for field in fields))
 
-        if client and self.cache_client_ip:
-            self.add_to_cache(client)
-        elif not client and self.cache_client_ip:
-            client = self._client_from_cache(packets)
+    result = subprocess.run(
+        command, input=pcap, check=True, capture_output=True)
 
-        if not client:
-            raise ClientIndeterminable("Unable to determine client from trace.")
-
-        self._ip_stats[client] = self._ip_stats.get(client, 0) + 1
-        return client
-
-    def to_trace(self, pcap: bytes) -> Tuple[Trace, Sequence[scapy.all.Packet]]:
-        """Converts a pcap to a packet trace."""
-        packets = scapy.utils.rdpcap(io.BytesIO(pcap))
-        client = self._determine_client_ip(packets)
-
-        trace: Trace = []
-        zero_time: Optional[Decimal] = None
-
-        for packet in _packets_with_endpoint(packets, client):
-            ip_layer = packet['IP']
-            direction = (Direction.OUT if ip_layer.src == client
-                         else Direction.IN)
-            if zero_time is None:
-                zero_time = packet.time
-            timestamp = float(packet.time - zero_time)
-            trace.append(Packet(timestamp, direction, ip_layer.len))
-        self._packet_stats['pcap'].append(len(packets))
-        self._packet_stats['trace'].append(len(trace))
-        return trace, packets
-
-    def ip_stats(self) -> Dict['str', int]:
-        """Returns the counts of deduced client IPs."""
-        return self._ip_stats
-
-    def packet_stats(self) -> pd.DataFrame:
-        """Returns summary statistics of the packet sizes."""
-        return pd.DataFrame(self._packet_stats).describe().transpose()
+    return pd.read_csv(io.BytesIO(result.stdout))
 
 
 TraceStats = TypedDict('TraceStats', {
