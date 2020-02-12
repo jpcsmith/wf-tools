@@ -181,7 +181,8 @@ def load_pcap(pcap: bytes, client_subnet: str) -> pd.DataFrame:
     result = subprocess.run(
         command, input=pcap, check=True, capture_output=True)
 
-    return pd.read_csv(io.BytesIO(result.stdout))
+    return (pd.read_csv(io.BytesIO(result.stdout))
+            .sort_values(by='frame.time_epoch'))
 
 
 TraceStats = TypedDict('TraceStats', {
