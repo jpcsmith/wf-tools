@@ -15,7 +15,7 @@ import numpy as np
 
 from lab.trace import Direction, Trace
 
-DEFAULT_NUM_FEATURES = 200
+DEFAULT_NUM_FEATURES = 165
 
 
 # --------------------
@@ -390,6 +390,6 @@ ALL_DEFAULT_FEATURES = list(itertools.chain(
     [f'alt-pps::{i}' for i in range(20)],
     ['alt-pps::sum'],
     DEFAULT_SIZE_FEATURES,
-    # TODO: Correct the feature names below
-    [f'conc-then-pps::{i}' for i in range(DEFAULT_NUM_FEATURES - 102)]
+    [f'conc::{i}' for i in range((DEFAULT_NUM_FEATURES - 102 + 1) // 2)],
+    [f'pps::{i}' for i in range((DEFAULT_NUM_FEATURES - 102) // 2)]
 ))
