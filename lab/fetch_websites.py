@@ -147,7 +147,7 @@ class ChromiumFactory(WebDriverFactory):
         return options
 
 
-class ChromiumSession():
+class ChromiumSession:
     """A browser session for fetching a webpage."""
     def __init__(
         self, url: str, protocol: str, driver_factory: WebDriverFactory = None
@@ -192,6 +192,12 @@ class ChromiumSession():
         """Returns the source document of the requested page."""
         assert self.driver is not None
         return self.driver.page_source
+
+    @property
+    def current_url(self) -> str:
+        """Returns the currently loaded url."""
+        assert self.driver is not None
+        return self.driver.current_url
 
     def fetch_page(self, timeout: int = 30) -> str:
         """Fetches the webpage and returns the page's source.
@@ -274,36 +280,38 @@ class ChromiumSession():
                         f"{response['status']} for document {response['url']}")
 
 
-# class ChromiumSession:
-#
-#
-# class SessionFactory(abc.ABC):
-#     """Factory class for creating fetch session."""
-#     @abstractmethod
-#     def create(self, domain: Domain, with_quic: bool) -> ChromiumSession:
-#         """Creates and returns a new BrowserSession."""
-#
-#
-# class ChromiumSessionFactory(SessionFactory):
-#     """Factory class for ChromiumSessions"""
-#     def __init__(self, driver_factory: ChromiumFactory):
-#         self._driver_factory = driver_factory
-#
-#     def create(self, domain: Domain, with_quic: bool) -> ChromiumSession:
-#         """Creates and returns a new BrowserSession."""
-#         return ChromiumSession(domain, with_quic, self._driver_factory)
-#
-#
-# Result = TypedDict('Result', {
-#     'domain': Domain,
-#     'with_quic': bool,
-#     'page_source': Optional[str],
-#     'status': Literal['success', 'timeout', 'failure'],
-#     'http_trace': Iterable[Dict[str, Any]],
-#     'packets': bytes,
-# })
-#
-#
+class SessionFactory(abc.ABC):
+    """Factory class for creating fetch session."""
+    @abstractmethod
+    def create(self, url: str, protocol: str) -> ChromiumSession:
+        """Creates and returns a new ChromiumSession."""
+
+
+class ChromiumSessionFactory(SessionFactory):
+    """Factory class for ChromiumSessions.
+
+    If driver_factory is None, any other kwargs will be passed to a
+    new ChromiumFactory.  Otherwise, driver_factory is used and other
+    keyword arguments are ignored.
+    """
+    def __init__(self, driver_factory: ChromiumFactory = None, **factory_kw):
+        self._driver_factory = driver_factory or ChromiumFactory(**factory_kw)
+
+    def create(self, url: str, protocol: str) -> ChromiumSession:
+        return ChromiumSession(url, protocol, self._driver_factory)
+
+
+Result = TypedDict('Result', {
+    'url': str,
+    'protocol': str,
+    'page_source': Optional[str],
+    'final_url': Optional[str],
+    'status': Literal['success', 'timeout', 'failure'],
+    'http_trace': Iterable[Dict[str, Any]],
+    'packets': bytes,
+})
+
+
 # class RepetitionTracker:
 #     """Tracks the repetitions and failures in the WebsiteTraceExperiment."""
 #     def __init__(self, repetitions: int, max_consecutive_failures: int = 3):
@@ -428,62 +436,62 @@ class ChromiumSession():
 #                         packets=self._sniffer.results)
 #
 #
-# def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
-#                   session_factory: SessionFactory) -> Result:
-#     """Fetch the URL and return the result of the fetch."""
-#     page_source = None
-#     status: Literal['success', 'timeout', 'failure'] = 'success'
-#
-#     with session_factory.create(domain, use_quic) as session:
-#         sniffer.start()
-#         try:
-#             page_source = session.fetch_page()
-#             status = 'success'
-#             # self._logger.info('Successfully fetched domain %s (quic: %s).',
-#             #                     domain, use_quic)
-#         except FetchTimeout as error:
-#             # self._logger.warning('%s (quic: %s). %s', domain, use_quic,
-#             #                         error)
-#             status = 'timeout'
-#         except (
-#             FetchFailed, UnexpectedAlertPresentException,
-#             WebDriverException,
-#         ) as error:
-#             # self._logger.warning('Failed to fetch %s (quic: %s). %s',
-#             #                         domain, use_quic, error)
-#             status = 'failure'
-#         finally:
-#             sniffer.stop()
-#
-#         return dict(page_source=page_source, status=status,
-#                     domain=domain, with_quic=use_quic,
-#                     http_trace=session.performance_log(),
-#                     packets=sniffer.results)
-#
-#
-# class SharedMultiProtocolSessionFactory:
-#     def __init__(self, driver_path: str, protocols: List[str]):
-#         self._lock = asyncio.Lock()
-#
-#         self._factories = {}
-#         for protocol in protocols:
-#             self._factories[protocol] = ChromiumSessionFactory(
-#                 ChromiumFactory(driver_path=driver_path, protocol=protocol))
-#
-#     async def collect_trace(
-#         self, url: str, protocol: str, sniffer: PacketSniffer
-#     ) -> Result:
-#         """Collect a trace, ensuring that multiple coroutines using
-#         this factory do not perform a fetch at the same time.
-#         """
-#         assert protocol in self._factories
-#
-#         loop = asyncio.get_running_loop()
-#         async with self._lock:
-#             return await loop.run_in_executor(
-#                 None, collect_trace, url, protocol, sniffer,
-#                 self._factories[protocol])
-#
+def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
+                  session_factory: SessionFactory) -> Result:
+    """Fetch the URL and return the result of the fetch."""
+    logger = logging.getLogger(__name__)
+    result: Result = dict(url=url, protocol=protocol, final_url=None,
+                          page_source=None, status='success', http_trace=[],
+                          packets=b'')
+
+    with session_factory.create(url, protocol) as session:
+        sniffer.start()
+        try:
+            result['page_source'] = session.fetch_page()
+            result.update({'final_url': session.current_url,
+                           'http_trace': session.performance_log(),
+                           'status': 'success'})
+            logger.debug('Successfully fetched %s [%s].', url, protocol)
+        except FetchTimeout as error:
+            result['status'] = 'timeout'
+            logger.debug('%s [%s]: %s', url, protocol, error)
+        except (
+            FetchFailed, UnexpectedAlertPresentException, WebDriverException
+        ) as error:
+            result['status'] = 'failure'
+            logger.debug('Failed to fetch %s [%s]: %s', url, protocol, error)
+        finally:
+            sniffer.stop()
+
+        if result['status'] == 'success':
+            result['packets'] = sniffer.results
+
+        return result
+
+
+class SharedMultiProtocolSessionFactory:
+    def __init__(self, driver_path: str, protocols: List[str]):
+        self._lock = asyncio.Lock()
+
+        self._factories = {}
+        for protocol in protocols:
+            self._factories[protocol] = \
+                ChromiumSessionFactory(driver_path=driver_path)
+
+    async def collect_trace(
+        self, url: str, protocol: str, sniffer: PacketSniffer
+    ) -> Result:
+        """Collect a trace, ensuring that multiple coroutines using
+        this factory do not perform a fetch at the same time.
+        """
+        assert protocol in self._factories
+
+        loop = asyncio.get_running_loop()
+        async with self._lock:
+            return await loop.run_in_executor(
+                None, collect_trace, url, protocol, sniffer,
+                self._factories[protocol])
+
 #
 # class ProtocolSampler:
 #     """Collects samples of a URL for varying protocols and numbers of

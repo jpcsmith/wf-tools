@@ -1,49 +1,20 @@
 """Tests for lab.fetch_websites.WebsiteTraceExperiment"""
 # pylint: disable=redefined-outer-name
 from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, PropertyMock
 
 import pytest
 import selenium
 from selenium.webdriver.remote.webdriver import WebDriver, WebDriverException
+from selenium.common.exceptions import TimeoutException
 
 import lab.fetch_websites
 from lab.fetch_websites import (
-    ChromiumSession, options_for_quic, ChromiumFactory
-    # ChromiumSession, Domain, PacketSniffer, SessionFactory,
-    # WebsiteTraceExperiment, FetchFailed, FetchTimeout, WebDriverFactory,
+    ChromiumSession, options_for_quic, ChromiumFactory, FetchFailed,
+    FetchTimeout, ChromiumSessionFactory, Result, collect_trace
 )
 
-# pylint: disable=line-too-long
-
-
-# @pytest.fixture
-# def mock_driver():
-#     """Returns a mock WebDriver."""
-#     return Mock(spec=WebDriver)
-
-
-# @pytest.fixture
-# def driver_factory(mock_driver):
-#     """Returns a mock WebDriverFactory which creates mock WebDrivers."""
-#     factory = Mock(spec=WebDriverFactory)
-#     factory.create.return_value = mock_driver
-#     return factory
-#
-#
-# @pytest.fixture(params=[True, False], ids=['QUIC', 'TCP'])
-# def chromium_session(driver_factory, request):
-#     """Returns a QUIC enabled ChromiumSession instance for the domain
-#     example.com with a mock WebDriverFactory.
-#     """
-#     return ChromiumSession(Domain('example.com'), request.param, driver_factory)
-#
-#
-# @pytest.fixture
-# def open_session(chromium_session):
-#     """Returns a chromium session which has already started."""
-#     chromium_session.begin()
-#     return chromium_session
+from lab.sniffer import PacketSniffer
 
 
 def test_begin_and_close_session():
@@ -156,54 +127,130 @@ def test_fetch_page_success(chromium_session):
     chromium_session.driver.get.assert_called_once_with("https://mall.com")
 
 
-# def test_session_begin(chromium_session, driver_factory):
-#     """It should create a new driver in begin."""
-#     chromium_session.begin()
+def test_fetch_page_timeout(chromium_session):
+    """It should raise 'FetchTimeout' on a request timeout."""
+    mock_driver = chromium_session.driver
+    mock_driver.get.side_effect = selenium.common.exceptions.TimeoutException()
+
+    with pytest.raises(FetchTimeout):
+        chromium_session.fetch_page(timeout=10)
+
+    mock_driver.set_page_load_timeout.assert_called_once_with(10)
+
+
+def test_fetch_page_failed(chromium_session):
+    """It should raise a FetchFailed exception if the result is an empty html
+    page.
+    """
+    page_source = "<html><head></head><body></body></html>"
+    mock_driver = chromium_session.driver
+    mock_driver.page_source = page_source
+
+    with pytest.raises(FetchFailed):
+        chromium_session.fetch_page()
+
+
+def test_collect_trace_success():
+    """It should correctly return success results."""
+    expected: Result = {
+        'url': 'https://google.com', 'protocol': 'h3-Q050',
+        'page_source': '<html><body>This is the page source</body></html>',
+        'final_url': 'https://www.google.com', 'status': 'success',
+        'http_trace': [{'entry': 'value'}, {'entry': 'value'}],
+        'packets': b'Packet trace',
+    }
+
+    mock_factory = mock.create_autospec(
+        spec=ChromiumSessionFactory, spec_set=True, name='MockCSFactory',
+        instance=True)
+    mock_factory.create.return_value = mock.create_autospec(
+        spec=ChromiumSession, spec_set=True, name='MockSession', instance=True)
+
+    mock_session = mock_factory.create.return_value
+    type(mock_session).current_url = PropertyMock(
+        return_value=expected['final_url'])
+    mock_session.fetch_page.return_value = expected['page_source']
+    mock_session.performance_log.return_value = expected['http_trace']
+    mock_session.__enter__.return_value = mock_session
+
+    mock_sniffer = mock.create_autospec(
+        spec=PacketSniffer, spec_set=True, name='MockSniffer', instance=True)
+    type(mock_sniffer).results = PropertyMock(return_value=expected['packets'])
+
+    result = collect_trace(url='https://google.com', protocol='h3-Q050',
+                           sniffer=mock_sniffer, session_factory=mock_factory)
+
+    mock_factory.create.assert_called_once_with(
+        expected['url'], expected['protocol'])
+    mock_session.performance_log.assert_called_once()
+    mock_session.fetch_page.assert_called_once()
+    mock_sniffer.start.assert_called_once()
+    mock_sniffer.stop.assert_called_once()
+
+    assert result == expected
+
+
+def test_collect_trace_timeout():
+    """It should correctly report a timeout."""
+    expected: Result = {
+        'url': 'https://google.com', 'protocol': 'h3-Q050',
+        'page_source': None, 'final_url': None, 'status': 'timeout',
+        'http_trace': [], 'packets': b'',
+    }
+
+    mock_factory = mock.create_autospec(
+        spec=ChromiumSessionFactory, spec_set=True, name='MockCSFactory',
+        instance=True)
+    mock_factory.create.return_value = mock.create_autospec(
+        spec=ChromiumSession, spec_set=True, name='MockSession', instance=True)
+
+    mock_session = mock_factory.create.return_value
+    mock_session.fetch_page.side_effect = FetchTimeout('https://google.com', 99)
+    mock_session.__enter__.return_value = mock_session
+
+    mock_sniffer = mock.create_autospec(
+        spec=PacketSniffer, spec_set=True, name='MockSniffer', instance=True)
+
+    result = collect_trace(url='https://google.com', protocol='h3-Q050',
+                           sniffer=mock_sniffer, session_factory=mock_factory)
+
+    assert result == expected
+    mock_factory.create.assert_called_once_with(expected['url'],
+                                                expected['protocol'])
+    mock_session.fetch_page.assert_called_once()
+    mock_sniffer.start.assert_called_once()
+    mock_sniffer.stop.assert_called_once()
+
+
+# pylint: disable=line-too-long
+
+# @pytest.fixture
+# def mock_driver():
+#     """Returns a mock WebDriver."""
+#     return Mock(spec=WebDriver)
+
+
+# @pytest.fixture
+# def driver_factory(mock_driver):
+#     """Returns a mock WebDriverFactory which creates mock WebDrivers."""
+#     factory = Mock(spec=WebDriverFactory)
+#     factory.create.return_value = mock_driver
+#     return factory
 #
-#     if chromium_session.use_quic is True:
-#         driver_factory.create.assert_called_once_with(Domain('example.com'))
-#     else:
-#         driver_factory.create.assert_called_once_with(None)
 #
-#
-# def test_session_close(open_session, mock_driver):
-#     """The session should release the driver resources on close."""
-#     open_session.close()
-#     mock_driver.close.assert_called_once()
-#
-#
-# def test_fetch_page_timeout(open_session, mock_driver):
-#     """It should raise 'FetchTimeout' on a request timeout."""
-#     mock_driver.get.side_effect = selenium.common.exceptions.TimeoutException()
-#
-#     with pytest.raises(FetchTimeout):
-#         open_session.fetch_page(timeout=10)
-#
-#     mock_driver.set_page_load_timeout.assert_called_once_with(10)
-#
-#
-# def test_fetch_page_failed(open_session, mock_driver):
-#     """It should raise a FetchFailed exception if the result is an empty html
-#     page.
+# @pytest.fixture(params=[True, False], ids=['QUIC', 'TCP'])
+# def chromium_session(driver_factory, request):
+#     """Returns a QUIC enabled ChromiumSession instance for the domain
+#     example.com with a mock WebDriverFactory.
 #     """
-#     page_source = "<html><head></head><body></body></html>"
-#     mock_driver.page_source = page_source
-#
-#     with pytest.raises(FetchFailed):
-#         open_session.fetch_page()
+#     return ChromiumSession(Domain('example.com'), request.param, driver_factory)
 #
 #
-# def test_fetch_page_success(open_session, mock_driver):
-#     """It should return the page source on a successful request."""
-#     page_source = "<html>This is the page source.</html>"
-#     mock_driver.page_source = page_source
-#
-#     result = open_session.fetch_page()
-#
-#     assert result == page_source
-#     mock_driver.get.assert_called_once_with('https://example.com')
-
-
+# @pytest.fixture
+# def open_session(chromium_session):
+#     """Returns a chromium session which has already started."""
+#     chromium_session.begin()
+#     return chromium_session
 # pylint: disable=line-too-long
 # @pytest.fixture
 # def sniffer():
