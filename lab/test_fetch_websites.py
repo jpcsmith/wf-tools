@@ -1,7 +1,8 @@
 """Tests for lab.fetch_websites.WebsiteTraceExperiment"""
 # pylint: disable=redefined-outer-name
+from itertools import islice
 from unittest import mock
-from unittest.mock import Mock, patch, PropertyMock
+from unittest.mock import Mock, patch, PropertyMock, sentinel
 
 import pytest
 import selenium
@@ -10,7 +11,7 @@ from selenium.webdriver.remote.webdriver import WebDriver, WebDriverException
 import lab.fetch_websites
 from lab.fetch_websites import (
     ChromiumSession, options_for_quic, ChromiumFactory, FetchFailed,
-    FetchTimeout, ChromiumSessionFactory, Result, collect_trace
+    FetchTimeout, ChromiumSessionFactory, Result, collect_trace, sample_url,
 )
 
 from lab.sniffer import PacketSniffer
@@ -228,6 +229,40 @@ def test_collect_trace_failures(mock_session_factory, mock_sniffer, status,
     mock_session.fetch_page.assert_called_once()
     mock_sniffer.start.assert_called_once()
     mock_sniffer.stop.assert_called_once()
+
+
+@mock.patch('lab.fetch_websites.collect_trace', autospec=True)
+def test_sample_url_tries_each(mock_collect_trace):
+    """It should try that each protocol is successful before collecting a
+    protocol repeatedly.
+    """
+    mock_collect_trace.side_effect = lambda u, proto, *_: {'protocol': proto}
+
+    results = sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 2},
+                         sentinel.sniffer, sentinel.factory)
+    list(islice(results, 3))
+
+    mock_collect_trace.assert_has_calls([
+        mock.call('https://pie.ch', 'tcp', sentinel.sniffer, sentinel.factory),
+        mock.call('https://pie.ch', 'Q043', sentinel.sniffer, sentinel.factory),
+        mock.call('https://pie.ch', 'Q046', sentinel.sniffer, sentinel.factory),
+    ], any_order=True)
+
+
+@mock.patch('lab.fetch_websites.collect_trace', autospec=True)
+def test_samples_repeatedly(mock_collect_trace):
+    """It should collect the required traces per protocol.
+    """
+    mock_collect_trace.side_effect = lambda u, proto, *_: {'protocol': proto}
+
+    results = sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 1},
+                         sentinel.sniffer, sentinel.factory)
+    list(results)
+
+    mock_collect_trace.assert_has_calls([
+        mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
+        for proto in ['Q043']*2 + ['tcp']*3 + ['Q046']
+    ], any_order=True)
 
 
 # pylint: disable=line-too-long

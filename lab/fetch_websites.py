@@ -4,6 +4,7 @@ import json
 import time
 import logging
 import asyncio
+import itertools
 import abc
 import re
 import urllib.parse
@@ -469,29 +470,42 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
         return result
 
 
-class SharedMultiProtocolSessionFactory:
-    def __init__(self, driver_path: str, protocols: List[str]):
-        self._lock = asyncio.Lock()
+def sample_url(url: str, protocols: Dict[str, int], sniffer, session_factory):
+    remaining = protocols.copy()
 
-        self._factories = {}
-        for protocol in protocols:
-            self._factories[protocol] = \
-                ChromiumSessionFactory(driver_path=driver_path)
+    for protocol in itertools.cycle(protocols):
+        if remaining[protocol] == 0:
+            continue
+        yield collect_trace(url, protocol, sniffer, session_factory)
+        remaining[protocol] -= 1
 
-    async def collect_trace(
-        self, url: str, protocol: str, sniffer: PacketSniffer
-    ) -> Result:
-        """Collect a trace, ensuring that multiple coroutines using
-        this factory do not perform a fetch at the same time.
-        """
-        assert protocol in self._factories
+        if sum(remaining.values()) == 0:
+            break
 
-        loop = asyncio.get_running_loop()
-        async with self._lock:
-            return await loop.run_in_executor(
-                None, collect_trace, url, protocol, sniffer,
-                self._factories[protocol])
 
+# class SharedMultiProtocolSessionFactory:
+#     def __init__(self, driver_path: str, protocols: List[str]):
+#         self._lock = asyncio.Lock()
+#
+#         self._factories = {}
+#         for protocol in protocols:
+#             self._factories[protocol] = \
+#                 ChromiumSessionFactory(driver_path=driver_path)
+#
+#     async def collect_trace(
+#         self, url: str, protocol: str, sniffer: PacketSniffer
+#     ) -> Result:
+#         """Collect a trace, ensuring that multiple coroutines using
+#         this factory do not perform a fetch at the same time.
+#         """
+#         assert protocol in self._factories
+#
+#         loop = asyncio.get_running_loop()
+#         async with self._lock:
+#             return await loop.run_in_executor(
+#                 None, collect_trace, url, protocol, sniffer,
+#                 self._factories[protocol])
+#
 #
 # class ProtocolSampler:
 #     """Collects samples of a URL for varying protocols and numbers of
