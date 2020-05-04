@@ -3,16 +3,13 @@
 import json
 import time
 import logging
-import itertools
 import asyncio
 import abc
 import re
 import urllib.parse
 from abc import abstractmethod
-from dataclasses import dataclass
 from typing import (
-    Any, Dict, Generator, Optional, TypeVar, Iterable, Iterator, AsyncIterator,
-    List,
+    Any, Dict, Generator, Optional, TypeVar, Iterable, List,
 )
 from urllib3.exceptions import MaxRetryError
 
@@ -311,6 +308,7 @@ Result = TypedDict('Result', {
     'packets': bytes,
 })
 
+# pylint: disable=line-too-long
 
 # class RepetitionTracker:
 #     """Tracks the repetitions and failures in the WebsiteTraceExperiment."""
@@ -436,6 +434,8 @@ Result = TypedDict('Result', {
 #                         packets=self._sniffer.results)
 #
 #
+
+
 def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
                   session_factory: SessionFactory) -> Result:
     """Fetch the URL and return the result of the fetch."""
