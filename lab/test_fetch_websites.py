@@ -201,16 +201,21 @@ def test_collect_trace_success(mock_session_factory, mock_sniffer):
     assert result == expected
 
 
-def test_collect_trace_timeout(mock_session_factory, mock_sniffer):
+@pytest.mark.parametrize('status,side_effect', [
+    ('timeout', FetchTimeout('https://google.com', 99)),
+    ('failure', FetchFailed('Failure!'))
+])
+def test_collect_trace_failures(mock_session_factory, mock_sniffer, status,
+                                side_effect):
     """It should correctly report a timeout."""
     expected: Result = {
         'url': 'https://google.com', 'protocol': 'h3-Q050',
-        'page_source': None, 'final_url': None, 'status': 'timeout',
+        'page_source': None, 'final_url': None, 'status': status,
         'http_trace': [], 'packets': b'',
     }
 
     mock_session = mock_session_factory.create.return_value
-    mock_session.fetch_page.side_effect = FetchTimeout('https://google.com', 99)
+    mock_session.fetch_page.side_effect = side_effect
     mock_session.__enter__.return_value = mock_session
 
     result = collect_trace(
