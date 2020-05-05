@@ -470,14 +470,29 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
         return result
 
 
-def sample_url(url: str, protocols: Dict[str, int], sniffer, session_factory):
+def sample_url(url: str, protocols: Dict[str, int], sniffer, session_factory,
+               max_attempts: int = 3):
+    attempts_remaining = max_attempts
     remaining = protocols.copy()
 
     for protocol in itertools.cycle(protocols):
         if remaining[protocol] == 0:
             continue
-        yield collect_trace(url, protocol, sniffer, session_factory)
-        remaining[protocol] -= 1
+
+        while True:
+            print(protocol, attempts_remaining)
+            result = collect_trace(url, protocol, sniffer, session_factory)
+
+            if result['status'] == 'success':
+                remaining[protocol] -= 1
+                attempts_remaining = max_attempts
+                yield result
+                break
+
+            attempts_remaining -= 1
+            yield result
+            if attempts_remaining == 0:
+                return
 
         if sum(remaining.values()) == 0:
             break
