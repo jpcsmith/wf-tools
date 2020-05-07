@@ -1,6 +1,6 @@
 """Tests for lab.fetch_websites.WebsiteTraceExperiment"""
 # pylint: disable=redefined-outer-name
-import itertools
+import time
 from itertools import islice
 from unittest import mock
 from unittest.mock import Mock, patch, PropertyMock, sentinel
@@ -327,3 +327,35 @@ def test_sample_url_max_attempts(mock_collect_trace):
     assert mock_collect_trace.call_args_list == [
         mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
         for proto in ['Q043', 'tcp', 'tcp'] + ['Q046']*2 + ['tcp']*2]
+
+
+@mock.patch('time.sleep', autospec=True)
+@mock.patch('lab.fetch_websites.collect_trace', autospec=True)
+def test_sample_url_delay(mock_collect_trace, mock_sleep):
+    trace_results = iter([('Q043', 'success'), ('tcp', 'success'),
+                          ('tcp', 'success')])
+
+    def _collect_trace(url, proto, *_):
+        protocol, status = next(trace_results)
+        assert proto == protocol
+        return {'protocol': proto, 'status': status, 'url': url}
+    mock_collect_trace.side_effect = _collect_trace
+
+    call_sequence = Mock()
+    call_sequence.attach_mock(mock_collect_trace, 'collect_trace')
+    call_sequence.attach_mock(mock_sleep, 'sleep')
+
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory,
+        max_attempts=2, delay=30
+    ).sample_url('https://pie.ch', {'Q043': 1, 'tcp': 2})
+    results = list(results)
+
+    sentinels = [sentinel.sniffer, sentinel.factory]
+    assert call_sequence.method_calls == [
+        mock.call.collect_trace('https://pie.ch', 'Q043', *sentinels),
+        mock.call.sleep(30),
+        mock.call.collect_trace('https://pie.ch', 'tcp', *sentinels),
+        mock.call.sleep(30),
+        mock.call.collect_trace('https://pie.ch', 'tcp', *sentinels),
+    ]

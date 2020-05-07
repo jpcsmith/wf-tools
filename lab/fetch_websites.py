@@ -470,48 +470,71 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
         return result
 
 
-class ProtocolSampler():
+class ProtocolSampler:
+    """Sample a set of protocols repeatedly.
+
+    Parameters
+    ----------
+    max_attempts :
+        Allow up to max_attempts sequential failures when collecting a
+        URL before giving up.
+    delay :
+        Wait delay seconds between each successive attempt for a given
+        URL.  A delay of 0 means do not wait.
+    """
     def __init__(
         self, sniffer: PacketSniffer, session_factory: SessionFactory,
-        max_attempts: int = 3
+        max_attempts: int = 3, delay: float = 0
     ):
+        assert delay >= 0
+        assert max_attempts > 0
         self.max_attempts: Final = max_attempts
+        self.delay: Final = delay
         self._sniffer = sniffer
         self._session_factory = session_factory
 
-    def _sample_with_retries(self, url, protocol, remaining) \
-            -> Generator[Result, None, bool]:
+    def _sample_with_retries(
+        self, url: str, protocol: str, immediate: bool = False
+    ) -> Generator[Result, None, bool]:
+        """Attempt to repeatedly sample the protocol. Return False iff
+        collection failed due to too many attempts.
+        """
         attempts_remaining = self.max_attempts
         while True:
+            if not immediate and self.delay > 0:
+                time.sleep(self.delay)
+
             result = collect_trace(
                 url, protocol, self._sniffer, self._session_factory)
+            yield result
 
             if result['status'] == 'success':
-                remaining[protocol] -= 1
-                attempts_remaining = self.max_attempts
-                yield result
-                break
-
+                return True
             attempts_remaining -= 1
-            yield result
+
             if attempts_remaining == 0:
                 return False
-        return True
+            immediate = False
 
     def sample_url(self, url: str, protocols: Dict[str, int]) \
             -> Iterable[Result]:
         """Sample a URL repeatedly using the specified protocols."""
         remaining = protocols.copy()
+        immediate = True
 
         for protocol in itertools.cycle(protocols):
             if remaining[protocol] == 0:
                 continue
 
             success = yield from self._sample_with_retries(
-                url, protocol, remaining)
+                url, protocol, immediate)
+
+            if success:
+                remaining[protocol] -= 1
 
             if not success or sum(remaining.values()) == 0:
                 return
+            immediate = False
 
 
 # class SharedMultiProtocolSessionFactory:
