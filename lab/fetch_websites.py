@@ -15,7 +15,7 @@ from typing import (
 from urllib3.exceptions import MaxRetryError
 
 from mypy_extensions import TypedDict
-from typing_extensions import Literal
+from typing_extensions import Literal, Final
 import selenium
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -470,32 +470,48 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
         return result
 
 
-def sample_url(url: str, protocols: Dict[str, int], sniffer, session_factory,
-               max_attempts: int = 3):
-    attempts_remaining = max_attempts
-    remaining = protocols.copy()
+class ProtocolSampler():
+    def __init__(
+        self, sniffer: PacketSniffer, session_factory: SessionFactory,
+        max_attempts: int = 3
+    ):
+        self.max_attempts: Final = max_attempts
+        self._sniffer = sniffer
+        self._session_factory = session_factory
 
-    for protocol in itertools.cycle(protocols):
-        if remaining[protocol] == 0:
-            continue
-
+    def _sample_with_retries(self, url, protocol, remaining) \
+            -> Generator[Result, None, bool]:
+        attempts_remaining = self.max_attempts
         while True:
-            print(protocol, attempts_remaining)
-            result = collect_trace(url, protocol, sniffer, session_factory)
+            result = collect_trace(
+                url, protocol, self._sniffer, self._session_factory)
 
             if result['status'] == 'success':
                 remaining[protocol] -= 1
-                attempts_remaining = max_attempts
+                attempts_remaining = self.max_attempts
                 yield result
                 break
 
             attempts_remaining -= 1
             yield result
             if attempts_remaining == 0:
-                return
+                return False
+        return True
 
-        if sum(remaining.values()) == 0:
-            break
+    def sample_url(self, url: str, protocols: Dict[str, int]) \
+            -> Iterable[Result]:
+        """Sample a URL repeatedly using the specified protocols."""
+        remaining = protocols.copy()
+
+        for protocol in itertools.cycle(protocols):
+            if remaining[protocol] == 0:
+                continue
+
+            success = yield from self._sample_with_retries(
+                url, protocol, remaining)
+
+            if not success or sum(remaining.values()) == 0:
+                return
 
 
 # class SharedMultiProtocolSessionFactory:

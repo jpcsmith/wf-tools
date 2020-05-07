@@ -12,7 +12,8 @@ from selenium.webdriver.remote.webdriver import WebDriver, WebDriverException
 import lab.fetch_websites
 from lab.fetch_websites import (
     ChromiumSession, options_for_quic, ChromiumFactory, FetchFailed,
-    FetchTimeout, ChromiumSessionFactory, Result, collect_trace, sample_url,
+    FetchTimeout, ChromiumSessionFactory, Result, collect_trace,
+    ProtocolSampler,
 )
 
 from lab.sniffer import PacketSniffer
@@ -240,8 +241,9 @@ def test_sample_url_tries_each(mock_collect_trace):
     mock_collect_trace.side_effect = lambda u, proto, *_: {
         'protocol': proto, 'status': 'success'}
 
-    results = sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 2},
-                         sentinel.sniffer, sentinel.factory)
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory,
+    ).sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 2})
     list(islice(results, 3))
 
     mock_collect_trace.assert_has_calls([
@@ -258,8 +260,9 @@ def test_samples_repeatedly(mock_collect_trace):
     mock_collect_trace.side_effect = lambda u, proto, *_: {
         'protocol': proto, 'status': 'success'}
 
-    results = sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 1},
-                         sentinel.sniffer, sentinel.factory)
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory
+    ).sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 1})
     list(results)
 
     mock_collect_trace.assert_has_calls([
@@ -281,8 +284,9 @@ def test_retries_on_failure(mock_collect_trace):
         return {'protocol': proto, 'status': 'success', 'url': url}
     mock_collect_trace.side_effect = _collect_trace
 
-    results = sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 1},
-                         sentinel.sniffer, sentinel.factory)
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory
+    ).sample_url('https://pie.ch', {'Q043': 2, 'tcp': 3, 'Q046': 1})
     items = [(r['protocol'], r['status']) for r in results]
 
     # It should retry
@@ -314,214 +318,12 @@ def test_sample_url_max_attempts(mock_collect_trace):
         return {'protocol': proto, 'status': status, 'url': url}
     mock_collect_trace.side_effect = _collect_trace
 
-    results = sample_url('https://pie.ch', {'Q043': 1, 'tcp': 5, 'Q046': 1},
-                         sentinel.sniffer, sentinel.factory, max_attempts=2)
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory,
+        max_attempts=2
+    ).sample_url('https://pie.ch', {'Q043': 1, 'tcp': 5, 'Q046': 1})
     results = list(results)
 
     assert mock_collect_trace.call_args_list == [
         mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
         for proto in ['Q043', 'tcp', 'tcp'] + ['Q046']*2 + ['tcp']*2]
-
-
-# @pytest.fixture
-# def mock_driver():
-#     """Returns a mock WebDriver."""
-#     return Mock(spec=WebDriver)
-
-
-# @pytest.fixture
-# def driver_factory(mock_driver):
-#     """Returns a mock WebDriverFactory which creates mock WebDrivers."""
-#     factory = Mock(spec=WebDriverFactory)
-#     factory.create.return_value = mock_driver
-#     return factory
-#
-#
-# @pytest.fixture(params=[True, False], ids=['QUIC', 'TCP'])
-# def chromium_session(driver_factory, request):
-#     """Returns a QUIC enabled ChromiumSession instance for the domain
-#     example.com with a mock WebDriverFactory.
-#     """
-#     return ChromiumSession(Domain('example.com'), request.param, driver_factory)
-#
-#
-# @pytest.fixture
-# def open_session(chromium_session):
-#     """Returns a chromium session which has already started."""
-#     chromium_session.begin()
-#     return chromium_session
-# pylint: disable=line-too-long
-# @pytest.fixture
-# def sniffer():
-#     """Returns a mocked sniffer."""
-#     mock = Mock(spec=PacketSniffer)
-#     type(mock).results = PropertyMock(side_effect=[
-#         'capture-A', 'capture-B', 'capture-C', 'capture-D',
-#         'capture-E', 'capture-F', 'capture-G', 'capture-H'])
-#     return mock
-#
-#
-# @pytest.fixture
-# def session_factory():
-#     """Returns a factory for creating mock sessions."""
-#     return create_mock_factory({
-#         'page_source': f'source-{val}',
-#         'fetch_page.return_value': f'source-{val}',
-#         'performance_log.return_value': f'trace-{val}',
-#     } for val in ['A', 'B', 'C', 'D'])
-#
-#
-# @pytest.fixture
-# def failed_session_factory():
-#     """Returns a factory for creating mock sessions."""
-#     return create_mock_factory({
-#         'page_source': None,
-#         'fetch_page.side_effect': FetchFailed,
-#         'performance_log.return_value': f'trace-{val}',
-#     } for val in ['A', 'B', 'C', 'D'])
-#
-#
-# @pytest.fixture
-# def seq_failed_session_factory():
-#     """Returns a factory for creating mock sessions which fail after 2
-#     successes.
-#     """
-#     return create_mock_factory([{
-#         'page_source': f'source-{val}',
-#         'fetch_page.return_value': f'source-{val}',
-#         'performance_log.return_value': f'trace-{val}',
-#     } for val in ['A', 'B']] + [{
-#         'page_source': None,
-#         'fetch_page.side_effect': FetchFailed,
-#         'performance_log.return_value': f'trace-{val}',
-#     } for val in ['C', 'D', 'E', 'F', 'G', 'H', 'I']])
-#
-#
-# def create_mock_factory(behaviours: Iterable[dict]):
-#     """Create a mock SessionFactory with sessions configured according to
-#     the provided behaviours.
-#     """
-#     mock_factory = Mock(spec=SessionFactory)
-#     mock_sessions = [
-#         MagicMock(spec=ChromiumSession, **behaviour) for behaviour in behaviours
-#     ]
-#     for mock in mock_sessions:
-#         mock.__enter__.return_value = mock
-#
-#     mock_factory.create.side_effect = mock_sessions
-#     return mock_factory
-#
-#
-# def test_sample_domain(sniffer, session_factory):
-#     """It should yield the samples for QUIC & TCP for domain."""
-#     domain = Domain('example.com')
-#     expected = [
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-A',
-#          'status': 'success', 'http_trace': 'trace-A', 'packets': 'capture-A'},
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-B',
-#          'status': 'success', 'http_trace': 'trace-B', 'packets': 'capture-B'},
-#         {'domain': domain, 'with_quic': False, 'page_source': 'source-C',
-#          'status': 'success', 'http_trace': 'trace-C', 'packets': 'capture-C'},
-#         {'domain': domain, 'with_quic': False, 'page_source': 'source-D',
-#          'status': 'success', 'http_trace': 'trace-D', 'packets': 'capture-D'},
-#     ]
-#
-#     experiment = WebsiteTraceExperiment(sniffer, session_factory)
-#
-#     result = list(experiment.sample_domain(domain, repetitions=2))
-#
-#     assert result == expected
-#
-#
-# def test_initial_failure(sniffer, failed_session_factory):
-#     """It should stop the repetitions on an initial failure."""
-#     domain = Domain('example.com')
-#     expected = [
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-A', 'packets': 'capture-A'},
-#         {'domain': domain, 'with_quic': False, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-B', 'packets': 'capture-B'},
-#     ]
-#
-#     experiment = WebsiteTraceExperiment(sniffer, failed_session_factory)
-#
-#     result = list(experiment.sample_domain(domain, repetitions=2))
-#
-#     assert result == expected
-#
-#
-# def test_repeated_failure(sniffer, seq_failed_session_factory):
-#     """It should stop the repetitions on an repeated failures."""
-#     domain = Domain('example.com')
-#     expected = [
-#         # QUIC successes
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-A',
-#          'status': 'success', 'http_trace': 'trace-A', 'packets': 'capture-A'},
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-B',
-#          'status': 'success', 'http_trace': 'trace-B', 'packets': 'capture-B'},
-#         # QUIC failures
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-C', 'packets': 'capture-C'},
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-D', 'packets': 'capture-D'},
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-E', 'packets': 'capture-E'},
-#         # TCP failure
-#         {'domain': domain, 'with_quic': False, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-F', 'packets': 'capture-F'},
-#     ]
-#
-#     experiment = WebsiteTraceExperiment(sniffer, seq_failed_session_factory)
-#
-#     result = list(experiment.sample_domain(domain, repetitions=10))
-#
-#     assert result == expected
-#
-#
-# def test_repeated_failure_continue(sniffer):
-#     """It should stop the repetitions on an repeated failures."""
-#     factory = create_mock_factory([
-#         {'page_source': f'source-A', 'fetch_page.return_value': f'source-A',
-#          'performance_log.return_value': f'trace-A'},
-#         {'page_source': None, 'fetch_page.side_effect': FetchFailed,
-#          'performance_log.return_value': f'trace-B'},
-#         {'page_source': None, 'fetch_page.side_effect': FetchFailed,
-#          'performance_log.return_value': f'trace-C'},
-#         {'page_source': f'source-A', 'fetch_page.return_value': f'source-D',
-#          'performance_log.return_value': f'trace-D'},
-#         {'page_source': None, 'fetch_page.side_effect': FetchFailed,
-#          'performance_log.return_value': f'trace-E'},
-#         {'page_source': f'source-F', 'fetch_page.return_value': f'source-F',
-#          'performance_log.return_value': f'trace-F'},
-#         {'page_source': None, 'fetch_page.side_effect': FetchFailed,
-#          'performance_log.return_value': f'trace-G'}])
-#
-#     domain = Domain('example.com')
-#     expected = [
-#         # QUIC success
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-A',
-#          'status': 'success', 'http_trace': 'trace-A', 'packets': 'capture-A'},
-#         # QUIC failures
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-B', 'packets': 'capture-B'},
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-C', 'packets': 'capture-C'},
-#         # QUIC success
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-D',
-#          'status': 'success', 'http_trace': 'trace-D', 'packets': 'capture-D'},
-#         # QUIC failure
-#         {'domain': domain, 'with_quic': True, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-E', 'packets': 'capture-E'},
-#         # QUIC success
-#         {'domain': domain, 'with_quic': True, 'page_source': 'source-F',
-#          'status': 'success', 'http_trace': 'trace-F', 'packets': 'capture-F'},
-#         # TCP failure
-#         {'domain': domain, 'with_quic': False, 'page_source': None,
-#          'status': 'failure', 'http_trace': 'trace-G', 'packets': 'capture-G'},
-#     ]
-#
-#     experiment = WebsiteTraceExperiment(sniffer, factory)
-#
-#     result = list(experiment.sample_domain(domain, repetitions=3))
-#
-#     assert result == expected
