@@ -10,7 +10,7 @@ import re
 import urllib.parse
 from abc import abstractmethod
 from typing import (
-    Any, Dict, Generator, Optional, TypeVar, Iterable, List,
+    Any, Dict, Generator, Optional, TypeVar, Iterable, List, AsyncIterable,
 )
 from urllib3.exceptions import MaxRetryError
 
@@ -470,6 +470,10 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
         return result
 
 
+class MaxSamplingAttemptError(RuntimeError):
+    """Raised when an upper limit for attempts has been hit."""
+
+
 class ProtocolSampler:
     """Sample a set of protocols repeatedly.
 
@@ -492,32 +496,41 @@ class ProtocolSampler:
         self.delay: Final = delay
         self._sniffer = sniffer
         self._session_factory = session_factory
+        self._lock: Optional[asyncio.Lock] = None
 
-    def _sample_with_retries(
+    async def _sample_with_retries(
         self, url: str, protocol: str, immediate: bool = False
-    ) -> Generator[Result, None, bool]:
+    ) -> AsyncIterable[Result]:
         """Attempt to repeatedly sample the protocol. Return False iff
         collection failed due to too many attempts.
         """
         attempts_remaining = self.max_attempts
         while True:
             if not immediate and self.delay > 0:
-                time.sleep(self.delay)
+                await asyncio.sleep(self.delay)
 
-            result = collect_trace(
-                url, protocol, self._sniffer, self._session_factory)
+            result = await self.collect_trace(url, protocol)
             yield result
 
             if result['status'] == 'success':
-                return True
+                return
             attempts_remaining -= 1
 
             if attempts_remaining == 0:
-                return False
+                raise MaxSamplingAttemptError
             immediate = False
 
-    def sample_url(self, url: str, protocols: Dict[str, int]) \
-            -> Iterable[Result]:
+    def sample_url(self, url: str, protocols: Dict[str, int]):
+        """Blocking call to sample the url."""
+        async def _gather():
+            results = []
+            async for result in self.async_sample_url(url, protocols):
+                results.append(result)
+            return results
+        yield from asyncio.run(_gather())
+
+    async def async_sample_url(self, url: str, protocols: Dict[str, int]) \
+            -> AsyncIterable[Result]:
         """Sample a URL repeatedly using the specified protocols."""
         remaining = protocols.copy()
         immediate = True
@@ -526,15 +539,31 @@ class ProtocolSampler:
             if remaining[protocol] == 0:
                 continue
 
-            success = yield from self._sample_with_retries(
-                url, protocol, immediate)
-
-            if success:
+            try:
+                coroutine = self._sample_with_retries(url, protocol, immediate)
+                async for result in coroutine:
+                    yield result
+            except MaxSamplingAttemptError:
+                return
+            else:
                 remaining[protocol] -= 1
 
-            if not success or sum(remaining.values()) == 0:
+            if sum(remaining.values()) == 0:
                 return
             immediate = False
+
+    async def collect_trace(self, url: str, protocol: str) -> Result:
+        """Run collect_trace asynchrnously. Multiple calls are are
+        async-safe, but not thread-safe.
+        """
+        loop = asyncio.get_running_loop()
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+
+        async with self._lock:
+            return await loop.run_in_executor(
+                None, collect_trace, url, protocol, self._sniffer,
+                self._session_factory)
 
 
 # class SharedMultiProtocolSessionFactory:

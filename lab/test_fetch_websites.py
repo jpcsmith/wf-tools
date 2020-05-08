@@ -1,6 +1,6 @@
 """Tests for lab.fetch_websites.WebsiteTraceExperiment"""
 # pylint: disable=redefined-outer-name
-import time
+import asyncio
 from itertools import islice
 from unittest import mock
 from unittest.mock import Mock, patch, PropertyMock, sentinel
@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch, PropertyMock, sentinel
 import pytest
 import selenium
 from selenium.webdriver.remote.webdriver import WebDriver, WebDriverException
+from mock.mock import AsyncMock
 
 import lab.fetch_websites
 from lab.fetch_websites import (
@@ -233,6 +234,23 @@ def test_collect_trace_failures(mock_session_factory, mock_sniffer, status,
     mock_sniffer.stop.assert_called_once()
 
 
+@pytest.fixture(name='sample_url')
+def sample_url_fixture():
+    """Return a function that can be used to synchronously sample
+    protocols.
+    """
+    sampler = ProtocolSampler(sniffer=sentinel.sniffer,
+                              session_factory=sentinel.factory)
+
+    async def _gather(url, protocols):
+        results = []
+        async for result in sampler.async_sample_url(url, protocols):
+            results.append(result)
+        return results
+
+    return lambda u, p: asyncio.run(_gather(u, p))
+
+
 @mock.patch('lab.fetch_websites.collect_trace', autospec=True)
 def test_sample_url_tries_each(mock_collect_trace):
     """It should try that each protocol is successful before collecting a
@@ -329,33 +347,24 @@ def test_sample_url_max_attempts(mock_collect_trace):
         for proto in ['Q043', 'tcp', 'tcp'] + ['Q046']*2 + ['tcp']*2]
 
 
-@mock.patch('time.sleep', autospec=True)
-@mock.patch('lab.fetch_websites.collect_trace', autospec=True)
-def test_sample_url_delay(mock_collect_trace, mock_sleep):
-    trace_results = iter([('Q043', 'success'), ('tcp', 'success'),
-                          ('tcp', 'success')])
+def test_sample_url_delay():
+    """It should sleep between successive calls for the same website."""
+    mock_sequence = AsyncMock()
+    mock_sequence.side_effect = [
+        {'protocol': proto, 'status': 'success'}
+        for proto in ['Q043', None, 'tcp', None, 'tcp']
+    ]
 
-    def _collect_trace(url, proto, *_):
-        protocol, status = next(trace_results)
-        assert proto == protocol
-        return {'protocol': proto, 'status': status, 'url': url}
-    mock_collect_trace.side_effect = _collect_trace
-
-    call_sequence = Mock()
-    call_sequence.attach_mock(mock_collect_trace, 'collect_trace')
-    call_sequence.attach_mock(mock_sleep, 'sleep')
-
-    results = ProtocolSampler(
+    sampler = ProtocolSampler(
         sniffer=sentinel.sniffer, session_factory=sentinel.factory,
-        max_attempts=2, delay=30
-    ).sample_url('https://pie.ch', {'Q043': 1, 'tcp': 2})
-    results = list(results)
+        max_attempts=2, delay=30)
+    with patch.object(sampler, 'collect_trace', mock_sequence), \
+            patch('asyncio.sleep', mock_sequence):
+        results = sampler.sample_url('https://pie.ch', {'Q043': 1, 'tcp': 2})
+        results = list(results)
 
-    sentinels = [sentinel.sniffer, sentinel.factory]
-    assert call_sequence.method_calls == [
-        mock.call.collect_trace('https://pie.ch', 'Q043', *sentinels),
-        mock.call.sleep(30),
-        mock.call.collect_trace('https://pie.ch', 'tcp', *sentinels),
-        mock.call.sleep(30),
-        mock.call.collect_trace('https://pie.ch', 'tcp', *sentinels),
+    assert mock_sequence.await_args_list == [
+        mock.call('https://pie.ch', 'Q043'), mock.call(30),
+        mock.call('https://pie.ch', 'tcp'), mock.call(30),
+        mock.call('https://pie.ch', 'tcp'),
     ]
