@@ -520,16 +520,7 @@ class ProtocolSampler:
                 raise MaxSamplingAttemptError
             immediate = False
 
-    def sample_url(self, url: str, protocols: Dict[str, int]):
-        """Blocking call to sample the url."""
-        async def _gather():
-            results = []
-            async for result in self.async_sample_url(url, protocols):
-                results.append(result)
-            return results
-        yield from asyncio.run(_gather())
-
-    async def async_sample_url(self, url: str, protocols: Dict[str, int]) \
+    async def sample_url(self, url: str, protocols: Dict[str, int]) \
             -> AsyncIterable[Result]:
         """Sample a URL repeatedly using the specified protocols."""
         remaining = protocols.copy()
