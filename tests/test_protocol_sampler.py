@@ -100,8 +100,7 @@ async def test_sample_url_max_attempts(mocker):
         sniffer=sentinel.sniffer, session_factory=sentinel.factory,
         max_attempts=2
     ).sample_url('https://pie.ch', {'Q043': 1, 'tcp': 5, 'Q046': 1})
-    with pytest.raises(MaxSamplingAttemptError):
-        _ = [result async for result in results]
+    _ = [result async for result in results]
 
     assert mock_collect_trace.call_args_list == [
         mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
@@ -136,7 +135,7 @@ async def test_sample_url_delay(mocker):
 async def test_sample_multiple(mocker):
     """It should interleave multiple samples."""
     sampler = ProtocolSampler(
-        sniffer=sentinel.sniffer, session_factory=sentinel.factory, delay=0.01)
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory, delay=0.001)
     protocols = {'tcp': 1, 'Q043': 1}
 
     mock_sequence = AsyncMock(side_effect=[
@@ -160,4 +159,4 @@ async def test_sample_multiple(mocker):
         mock.call('https://google.com', 'Q043'),
     ]
     # Sleeps should only be called twice
-    assert sum(mock.call(0.01) == c for c in mock_sleep.call_args_list) == 2
+    assert sum(mock.call(0.001) == c for c in mock_sleep.call_args_list) == 2
