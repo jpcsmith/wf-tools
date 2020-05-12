@@ -8,7 +8,7 @@ import pytest
 from mock.mock import AsyncMock
 from aiostream import stream
 
-from lab.fetch_websites import ProtocolSampler
+from lab.fetch_websites import ProtocolSampler, MaxSamplingAttemptError
 
 
 @pytest.mark.asyncio
@@ -100,7 +100,8 @@ async def test_sample_url_max_attempts(mocker):
         sniffer=sentinel.sniffer, session_factory=sentinel.factory,
         max_attempts=2
     ).sample_url('https://pie.ch', {'Q043': 1, 'tcp': 5, 'Q046': 1})
-    _ = [result async for result in results]
+    with pytest.raises(MaxSamplingAttemptError):
+        _ = [result async for result in results]
 
     assert mock_collect_trace.call_args_list == [
         mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
@@ -131,22 +132,29 @@ async def test_sample_url_delay(mocker):
     ]
 
 
-# @pytest.mark.asyncio
-# async def test_sample_multiple():
-#     sampler = ProtocolSampler(
-#         sniffer=sentinel.sniffer, session_factory=sentinel.factory, delay=0.1)
-#     protocols = {'tcp': 1, 'Q043': 1}
-#
-#     with mock.patch('lab.fetch_websites.collect_trace', autospec=True) as mock_collect_trace:
-#         stream = aiostream.stream.merge(
-#             sampler.async_sample_url('https://pie.ch', protocols),
-#             sampler.async_sample_url('https://bin.ch', protocols),
-#         )
-#         print(await stream.list())
-#
-#         assert mock_collect_trace.call_args_list == [
-#             mock.call('https://pie.ch', 'tcp', sentinel.sniffer, sentinel.factory),
-#             mock.call('https://bin.ch', 'tcp', sentinel.sniffer, sentinel.factory),
-#             mock.call('https://pie.ch', 'Q043', sentinel.sniffer, sentinel.factory),
-#             mock.call('https://bin.ch', 'Q043', sentinel.sniffer, sentinel.factory),
-#         ]
+@pytest.mark.asyncio
+async def test_sample_multiple(mocker):
+    """It should interleave multiple samples."""
+    sampler = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory, delay=0.01)
+    protocols = {'tcp': 1, 'Q043': 1}
+
+    mock_sequence = AsyncMock(side_effect=[
+        {'protocol': proto, 'status': 'success'}
+        for proto in ['tcp', 'tcp', 'Q043', 'Q043']
+    ], spec=sampler.collect_trace, spec_set=True)
+    mocker.patch.object(sampler, 'collect_trace', mock_sequence)
+
+    result_stream = stream.merge(
+        sampler.sample_url('https://example.com', protocols),
+        sampler.sample_url('https://google.com', protocols),
+    )
+    async with result_stream.stream() as streamer:
+        _ = [x async for x in streamer]
+
+    assert mock_sequence.await_args_list == [
+        mock.call('https://example.com', 'tcp'),
+        mock.call('https://google.com', 'tcp'),
+        mock.call('https://example.com', 'Q043'),
+        mock.call('https://google.com', 'Q043'),
+    ]
