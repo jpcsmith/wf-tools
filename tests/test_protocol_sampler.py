@@ -1,14 +1,12 @@
 """Tests for lab.fetch_websites.ProtocolSampler"""
 import asyncio
-from itertools import islice
 from unittest import mock
-from unittest.mock import patch, sentinel
+from unittest.mock import sentinel
 
 import pytest
 from mock.mock import AsyncMock
-from aiostream import stream
 
-from lab.fetch_websites import ProtocolSampler, MaxSamplingAttemptError
+from lab.fetch_websites import ProtocolSampler
 
 
 @pytest.mark.asyncio
@@ -145,12 +143,8 @@ async def test_sample_multiple(mocker):
     mocker.patch.object(sampler, 'collect_trace', mock_sequence)
     mock_sleep = mocker.spy(asyncio, 'sleep')
 
-    result_stream = stream.merge(
-        sampler.sample_url('https://example.com', protocols),
-        sampler.sample_url('https://google.com', protocols),
-    )
-    async with result_stream.stream() as streamer:
-        _ = [x async for x in streamer]
+    urls = ['https://example.com', 'https://google.com']
+    _ = [x async for x in sampler.sample_multiple(urls, protocols)]
 
     assert mock_sequence.await_args_list == [
         mock.call('https://example.com', 'tcp'),

@@ -11,11 +11,13 @@ import urllib.parse
 from abc import abstractmethod
 from typing import (
     Any, Dict, Generator, Optional, TypeVar, Iterable, List, AsyncIterable,
+    Sequence,
 )
 from urllib3.exceptions import MaxRetryError
 
 from mypy_extensions import TypedDict
 from typing_extensions import Literal, Final
+import aiostream
 import selenium
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -542,6 +544,19 @@ class ProtocolSampler:
             if sum(remaining.values()) == 0:
                 return
             immediate = False
+
+    async def sample_multiple(
+        self, urls: Sequence[str], protocols: Dict[str, int]
+    ) -> AsyncIterable[Result]:
+        """Samples multiple URLs and yields results as soon as they are
+        available.
+        """
+        result_stream = aiostream.stream.merge(
+            *[self.sample_url(url, protocols) for url in urls])
+
+        async with result_stream.stream() as streamer:
+            async for result in streamer:
+                yield result
 
     async def collect_trace(self, url: str, protocol: str) -> Result:
         """Run collect_trace asynchrnously. Multiple calls are are
