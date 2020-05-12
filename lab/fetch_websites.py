@@ -2,6 +2,7 @@
 # pylint: disable=too-few-public-methods
 import json
 import time
+import base64
 import logging
 import asyncio
 import itertools
@@ -310,132 +311,15 @@ Result = TypedDict('Result', {
     'packets': bytes,
 })
 
-# pylint: disable=line-too-long
 
-# class RepetitionTracker:
-#     """Tracks the repetitions and failures in the WebsiteTraceExperiment."""
-#     def __init__(self, repetitions: int, max_consecutive_failures: int = 3):
-#         assert max_consecutive_failures > 0
-#         self.repetitions = repetitions
-#         self.max_consecutive_failures = max_consecutive_failures
-#         self.counts = {'success': 0, 'total': 0, 'failure-seq': 0}
-#
-#     def is_first(self) -> bool:
-#         """Returns true iff there have been no observed successful results."""
-#         return self.counts['success'] == 0
-#
-#     def only_failures(self) -> bool:
-#         """Return true iff there are failures without any successes."""
-#         return self.counts['success'] == 0 and self.counts['total'] > 0
-#
-#     def too_many_failures(self) -> bool:
-#         """Returns true iff a sequence of max_consecutive_failures was observed.
-#         """
-#         return self.counts['failure-seq'] == self.max_consecutive_failures
-#
-#     def repeat(self) -> bool:
-#         """Returns true if the experiment should continue fetching."""
-#         assert self.counts['failure-seq'] <= self.max_consecutive_failures
-#         if self.only_failures() or self.too_many_failures():
-#             return False
-#         assert self.counts['success'] <= self.repetitions
-#         if self.counts['success'] == self.repetitions:
-#             return False
-#         return True
-#
-#     def observe(self, result: Result) -> Result:
-#         """Update the repetition progress with the observed result."""
-#         if result['status'] == 'success':
-#             self.counts['success'] += 1
-#             self.counts['failure-seq'] = 0
-#         else:
-#             self.counts['failure-seq'] += 1
-#         self.counts['total'] += 1
-#         return result
-#
-#
-# class WebsiteTraceExperiment:
-#     """Experiment consisting for fetching and tracing website traffic."""
-#     def __init__(self, sniffer: PacketSniffer, session_factory: SessionFactory):
-#         self._logger = logging.getLogger(__name__)
-#         self._sniffer = sniffer
-#         self._session_factory = session_factory
-#
-#     def _sample_with_repetitions(
-#         self,
-#         domain: Domain,
-#         tracker: RepetitionTracker,
-#         use_quic: bool,
-#         keep_sources: Literal['all', 'first', 'none'] = 'all'
-#     ) -> Iterator[Result]:
-#         """Perform the sampling with repetitions using the provided tracker."""
-#         protocol = 'QUIC' if use_quic else 'TCP'
-#
-#         while tracker.repeat():
-#             with_source = keep_sources == 'all' or (
-#                 keep_sources == 'first' and tracker.is_first())
-#             yield tracker.observe(
-#                 self.sample(domain, use_quic=use_quic, with_source=with_source))
-#
-#         if tracker.only_failures() or tracker.too_many_failures():
-#             self._logger.warning("Stopped fetching %s sites for %s due to "
-#                                  "failures.", protocol, domain)
-#         self._logger.info("%s fetch stats - %s", protocol, tracker.counts)
-#
-#     def sample_domain(
-#         self,
-#         domain: Domain,
-#         repetitions: int = 1,
-#         keep_sources: Literal['all', 'first', 'none'] = 'all',
-#         fetch_tcp: bool = True
-#     ) -> Iterator[Result]:
-#         """Yields the results of sampling with and without QUIC."""
-#         tracker = RepetitionTracker(repetitions)
-#         yield from self._sample_with_repetitions(
-#             domain, tracker, use_quic=True, keep_sources=keep_sources)
-#
-#         if fetch_tcp:
-#             tracker = RepetitionTracker(tracker.counts['success'] or 1)
-#             yield from self._sample_with_repetitions(
-#                 domain, tracker, use_quic=False, keep_sources=keep_sources)
-#
-#     def sample(
-#         self, domain: Domain, use_quic: bool, with_source: bool = True
-#     ) -> Result:
-#         """Fetch the domain and returns the result."""
-#         page_source = None
-#         status: Literal['success', 'timeout', 'failure'] = 'success'
-#
-#         with self._session_factory.create(domain, use_quic) as session:
-#             self._sniffer.start()
-#             try:
-#                 page_source = session.fetch_page()
-#                 status = 'success'
-#                 self._logger.info('Successfully fetched domain %s (quic: %s).',
-#                                   domain, use_quic)
-#             except FetchTimeout as error:
-#                 self._logger.warning('%s (quic: %s). %s', domain, use_quic,
-#                                      error)
-#                 status = 'timeout'
-#             except (
-#                 FetchFailed, UnexpectedAlertPresentException,
-#                 WebDriverException,
-#             ) as error:
-#                 self._logger.warning('Failed to fetch %s (quic: %s). %s',
-#                                      domain, use_quic, error)
-#                 status = 'failure'
-#             finally:
-#                 self._sniffer.stop()
-#
-#             if not with_source:
-#                 page_source = None
-#
-#             return dict(page_source=page_source, status=status,
-#                         domain=domain, with_quic=use_quic,
-#                         http_trace=session.performance_log(),
-#                         packets=self._sniffer.results)
-#
-#
+def encode_result(result: Result) -> str:
+    """Encode the result in json format."""
+    result_copy = result
+    if result_copy['packets'] is not None:
+        result_copy = result_copy.copy()
+        result_copy['packets'] = base64.b64encode(  # type: ignore
+            result_copy['packets']).decode('utf8')
+    return json.dumps(result_copy)
 
 
 def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
