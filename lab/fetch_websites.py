@@ -161,8 +161,7 @@ class ChromiumSession:
     def begin(self) -> None:
         """Starts the session."""
         assert self.driver is None
-        self._logger.info('Starting webpage session for %s via %s',
-                          self.url, self.protocol)
+        self._logger.info('Starting session %s', self)
         self.driver = self._driver_factory.create(self.url, self.protocol)
 
     def close(self):
