@@ -144,6 +144,7 @@ async def test_sample_multiple(mocker):
         for proto in ['tcp', 'tcp', 'Q043', 'Q043']
     ], spec=sampler.collect_trace, spec_set=True)
     mocker.patch.object(sampler, 'collect_trace', mock_sequence)
+    mock_sleep = mocker.spy(asyncio, 'sleep')
 
     result_stream = stream.merge(
         sampler.sample_url('https://example.com', protocols),
@@ -158,3 +159,5 @@ async def test_sample_multiple(mocker):
         mock.call('https://example.com', 'Q043'),
         mock.call('https://google.com', 'Q043'),
     ]
+    # Sleeps should only be called twice
+    assert sum(mock.call(0.01) == c for c in mock_sleep.call_args_list) == 2
