@@ -321,8 +321,8 @@ def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
     if remaining_space > 0:
         _extend_exactly(result, concentrations, (remaining_space + 1) // 2)
         _extend_exactly(result, pps, remaining_space // 2)
+        assert len(result) == max_size
 
-    assert len(result) == max_size
     return tuple(result[:max_size])
 
 
