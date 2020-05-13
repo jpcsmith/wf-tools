@@ -22,7 +22,7 @@ class PacketSniffer:
     """Class for capturing network traffic."""
     stop_delay = 1
 
-    def __init__(self, capture_filter: str = 'tcp or udp port 443',
+    def __init__(self, capture_filter: str = 'tcp or udp',
                  snaplen: Optional[int] = None):
         def _started_callback():
             with self._start_condition:
