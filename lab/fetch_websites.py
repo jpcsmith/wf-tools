@@ -140,7 +140,7 @@ class ChromiumFactory(WebDriverFactory):
             options.add_argument(argument)
 
         # Add tracing of network requests
-        options.set_capability('goog:loggingPrefs', {'performance': 'DEBUG'})
+        options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
         options.add_experimental_option('perfLoggingPrefs', {
             'enableNetwork': True,
             'enablePage': False,
@@ -158,6 +158,7 @@ class ChromiumSession:
         self.driver = None
         self._driver_factory = driver_factory or ChromiumFactory()
         self._logger = logging.getLogger(__name__)
+        self._performance_log = None
 
     def begin(self) -> None:
         """Starts the session."""
@@ -236,12 +237,19 @@ class ChromiumSession:
         browser.
         """
         assert self.driver is not None
-        log = self.driver.get_log('performance')
-        assert log is not None
+        if self._performance_log is None:
+            log = self.driver.get_log('performance')
+            assert log is not None
 
-        for entry in log:
-            entry['message'] = json.loads(entry['message'])
-        return log
+            for entry in log:
+                entry['message'] = json.loads(entry['message'])
+
+            # We filter Page events as Chrome doesnt properly
+            log = [entry for entry in log if not
+                   entry['message']['message']['method'].startswith('Page.')]
+            self._performance_log = log
+
+        return self._performance_log
 
     def _validate_response(self, page_source: str, min_chars: int = 100):
         """Raises `FetchFailed` error on an empty html document, or
