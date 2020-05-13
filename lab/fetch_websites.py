@@ -14,6 +14,7 @@ from typing import (
     Any, Dict, Generator, Optional, TypeVar, Iterable, List, AsyncIterable,
     Sequence,
 )
+from collections import Counter, defaultdict
 from urllib3.exceptions import MaxRetryError
 
 from mypy_extensions import TypedDict
@@ -453,3 +454,42 @@ class ProtocolSampler:
             return await loop.run_in_executor(
                 None, collect_trace, url, protocol, self._sniffer,
                 self._session_factory)
+
+
+def filter_by_checkpoint(
+    urls: List[str], checkpoint: Iterable[Result], counter: Dict[str, int],
+    max_attempts: int = 3
+) -> Dict[str, Counter]:
+    """Filter the URLs by the checkpoint.
+
+    Return a dictionary mapping the URLs still to be collected to the number of
+    each protocol to be collected.
+
+    The returned counter is guaranteed to not have any negative elements.
+    The returned dict will not have any URLs with empty counters.
+    URLs which failed at least max_attempts times in sequence will also
+    be removed.
+    """
+    failures: Counter = Counter()
+    base = {url: Counter(counter) for url in urls}
+    checkpoint_results: Dict[str, Counter] = defaultdict(Counter)
+
+    for result in checkpoint:
+        url = result['url']
+
+        if failures[url] >= max_attempts:
+            continue
+
+        if result['status'] == 'success':
+            checkpoint_results[url][result['protocol']] += 1
+            failures[url] = 0
+        else:
+            failures[url] += 1
+
+    for url, completed_counter in checkpoint_results.items():
+        # Copy-Subtraction ensures that there are no negative counts
+        base[url] = base[url] - completed_counter
+        if sum(base[url].values()) == 0 or failures[url] >= max_attempts:
+            del base[url]
+
+    return base
