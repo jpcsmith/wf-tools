@@ -1,4 +1,7 @@
-"""A wrapper around tshark to perform traffic sniffing."""
+"""Perform packet sniffing.
+
+Currently uses the scapy library and is limited to TCP/UDP packets.
+"""
 import io
 import time
 import logging
@@ -11,7 +14,15 @@ import scapy.compat
 import scapy.plist
 import scapy.sendrecv
 import scapy.utils
-import scapy.layers.inet
+from scapy.layers import inet, l2
+
+# Enable parsing only to the level of UDP and TCP packets
+l2.Ether.payload_guess = [({"type": 0x800}, inet.IP)]
+inet.IP.payload_guess = [
+    ({"frag": 0, "proto": 0x11}, inet.UDP), ({"proto": 0x06}, inet.TCP)
+]
+inet.UDP.payload_guess = []
+inet.TCP.payload_guess = []
 
 
 class SnifferStartTimeout(Exception):
@@ -104,5 +115,5 @@ class PacketSniffer:
         self._sniffer.results = scapy.plist.PacketList(
             name='Sniffed',
             res=self._sniffer.results,
-            stats=[scapy.layers.inet.TCP, scapy.layers.inet.UDP])
+            stats=[inet.TCP, inet.UDP])
         self._logger.info('Sniffing complete. %r', self._sniffer.results)
