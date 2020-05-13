@@ -143,8 +143,9 @@ async def test_sample_multiple(mocker):
     mocker.patch.object(sampler, 'collect_trace', mock_sequence)
     mock_sleep = mocker.spy(asyncio, 'sleep')
 
-    urls = ['https://example.com', 'https://google.com']
-    _ = [x async for x in sampler.sample_multiple(urls, protocols)]
+    urls = {'https://example.com': protocols.copy(),
+            'https://google.com': protocols.copy()}
+    _ = [x async for x in sampler.sample_multiple(urls)]
 
     assert mock_sequence.await_args_list == [
         mock.call('https://example.com', 'tcp'),

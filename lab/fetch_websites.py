@@ -429,14 +429,14 @@ class ProtocolSampler:
                 return
             immediate = False
 
-    async def sample_multiple(
-        self, urls: Sequence[str], protocols: Dict[str, int]
-    ) -> AsyncIterable[Result]:
+    async def sample_multiple(self, urls: Dict[str, Dict[str, int]]) \
+            -> AsyncIterable[Result]:
         """Samples multiple URLs and yields results as soon as they are
         available.
         """
         result_stream = aiostream.stream.merge(
-            *[self.sample_url(url, protocols) for url in urls])
+            *[self.sample_url(url, protocols)
+              for url, protocols in urls.items()])
 
         async with result_stream.stream() as streamer:
             async for result in streamer:
