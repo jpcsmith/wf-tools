@@ -40,9 +40,11 @@ def test_create_give_up(monkeypatch):
 def test_options_for_quic():
     """It should return the correct arguments to download QUIC."""
     assert options_for_quic("https://google.com", "Q043") == [
+        "--enable-quic",
         "--origin-to-force-quic-on=google.com:443",
         "--quic-version=QUIC_VERSION_43"]
     assert options_for_quic("https://www.blogspot.com", "h3-Q050") == [
+        "--enable-quic",
         "--origin-to-force-quic-on=www.blogspot.com:443",
         "--quic-version=h3-Q050"]
 

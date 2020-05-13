@@ -70,7 +70,7 @@ def options_for_quic(url: str, protocol: str) -> List[str]:
     parsed = urllib.parse.urlparse(url, scheme="https")
     assert parsed.port is None
     assert parsed.hostname is not None
-    return [f"--origin-to-force-quic-on={parsed.hostname}:443",
+    return ["--enable-quic", f"--origin-to-force-quic-on={parsed.hostname}:443",
             f"--quic-version={version_string}"]
 
 
@@ -353,15 +353,15 @@ def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
             result.update({'final_url': session.current_url,
                            'http_trace': session.performance_log(),
                            'status': 'success'})
-            logger.debug('Successfully fetched %s [%s].', url, protocol)
+            logger.info('Successfully fetched %s [%s].', url, protocol)
         except FetchTimeout as error:
             result['status'] = 'timeout'
-            logger.debug('%s [%s]: %s', url, protocol, error)
+            logger.info('%s [%s]: %s', url, protocol, error)
         except (
             FetchFailed, UnexpectedAlertPresentException, WebDriverException
         ) as error:
             result['status'] = 'failure'
-            logger.debug('Failed to fetch %s [%s]: %s', url, protocol, error)
+            logger.info('Failed to fetch %s [%s]: %s', url, protocol, error)
         finally:
             sniffer.stop()
 
