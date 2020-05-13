@@ -12,7 +12,6 @@ import urllib.parse
 from abc import abstractmethod
 from typing import (
     Any, Dict, Generator, Optional, TypeVar, Iterable, List, AsyncIterable,
-    Sequence,
 )
 from collections import Counter, defaultdict
 from urllib3.exceptions import MaxRetryError
@@ -321,6 +320,22 @@ def encode_result(result: Result) -> str:
         result_copy['packets'] = base64.b64encode(  # type: ignore
             result_copy['packets']).decode('utf8')
     return json.dumps(result_copy)
+
+
+def decode_result(json_str: str, full_decode: bool = True) -> Result:
+    """Decode the json string to a result object.
+
+    If full_decode is false, 'packets' and 'http_trace' are set to their
+    empty values.
+    """
+    if full_decode:
+        raise NotImplementedError("Full result decode is not yet implemented.")
+
+    result = json.loads(json_str)
+    result['http_trace'] = []
+    result['packets'] = b''
+
+    return result
 
 
 def collect_trace(url: str, protocol: str, sniffer: PacketSniffer,
