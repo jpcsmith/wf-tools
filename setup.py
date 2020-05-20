@@ -24,6 +24,7 @@ DEPENDENCIES = [
     'snakemake>=5.10',
     'matplotlib',
     'seaborn',
+    'aiostream==0.4.1',
 ]
 # Other dependencies include
 # - pdflatex
