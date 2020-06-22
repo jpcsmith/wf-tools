@@ -41,7 +41,7 @@ setup(
     ).read_text(),
 
     # Automatically extract version information from git tags
-    use_scm_version={'root': '../'},
+    use_scm_version={'root': './'},
     setup_requires=['setuptools_scm'],
 
     # This should be your name or the name of the organization which owns the
