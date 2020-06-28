@@ -34,7 +34,7 @@ class PacketSniffer:
     stop_delay = 1
 
     def __init__(self, capture_filter: str = 'tcp or udp',
-                 snaplen: Optional[int] = None):
+                 snaplen: Optional[int] = None, **kwargs):
         def _started_callback():
             with self._start_condition:
                 self._started = True
@@ -48,6 +48,7 @@ class PacketSniffer:
             filter=capture_filter,
             started_callback=_started_callback,
             promisc=False,
+            **kwargs,
         )
 
         self.snaplen = snaplen

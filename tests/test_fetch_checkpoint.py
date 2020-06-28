@@ -111,3 +111,15 @@ def test_non_sequential_failures():
 
     assert result == {'https://a.com': (counter - Counter(tcp=1, Q043=2)),
                       'https://b.com': counter.copy()}
+
+
+def test_no_success_max_failures():
+    """It should correctly handle items which have only ever failed."""
+    checkpoint = [
+        make_result(url="https://www.a.com", protocol="Q043", status="failure"),
+        make_result(url="https://www.a.com", protocol="Q043", status="failure"),
+        make_result(url="https://www.a.com", protocol="Q043", status="failure"),
+    ]
+    urls = ["https://www.a.com"]
+    version_ctr: Counter = Counter(Q043=1, Q046=1)
+    assert filter_by_checkpoint(urls, checkpoint, version_ctr) == Counter()

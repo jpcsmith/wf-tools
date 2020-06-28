@@ -12,8 +12,9 @@ import urllib.parse
 from abc import abstractmethod
 from typing import (
     Any, Dict, Generator, Optional, TypeVar, Iterable, List, AsyncIterable,
+    Tuple, Sequence, Union
 )
-from collections import Counter, defaultdict
+from collections import Counter
 from urllib3.exceptions import MaxRetryError
 
 from mypy_extensions import TypedDict
@@ -452,14 +453,28 @@ class ProtocolSampler:
                 return
             immediate = False
 
-    async def sample_multiple(self, urls: Dict[str, Dict[str, int]]) \
-            -> AsyncIterable[Result]:
+    async def sample_multiple(
+        self,
+        urls: Union[Dict[str, Dict[str, int]],
+                    Tuple[Sequence[str], Dict[str, int]]]
+    ) -> AsyncIterable[Result]:
         """Samples multiple URLs and yields results as soon as they are
         available.
+
+        Parameters
+        ----------
+        urls:
+            Either a dictionary mapping each URL to a Counter
+            identifying how many times each protocol version should be
+            collected for that URL, or a tuple of the URLs and a single
+            counter mapping protocol versions to repetitions.
         """
+        from itertools import repeat
         result_stream = aiostream.stream.merge(
             *[self.sample_url(url, protocols)
-              for url, protocols in urls.items()])
+              for url, protocols in
+              (zip(urls[0], repeat(urls[1])) if isinstance(urls, tuple)
+               else urls.items())])
 
         async with result_stream.stream() as streamer:
             async for result in streamer:
@@ -495,7 +510,7 @@ def filter_by_checkpoint(
     """
     failures: Counter = Counter()
     base = {url: Counter(counter) for url in urls}
-    checkpoint_results: Dict[str, Counter] = defaultdict(Counter)
+    checkpoint_results: Dict[str, Counter] = {url: Counter() for url in urls}
 
     for result in checkpoint:
         url = result['url']
@@ -514,5 +529,4 @@ def filter_by_checkpoint(
         base[url] = base[url] - completed_counter
         if sum(base[url].values()) == 0 or failures[url] >= max_attempts:
             del base[url]
-
     return base
