@@ -11,7 +11,7 @@ from pathlib import Path
 from setuptools import setup, find_packages
 
 DEPENDENCIES = [
-    'doceasy>=0.2.0',
+    'doceasy>=0.3.0',
     'click',
     'mypy-extensions',
     'pandas',
