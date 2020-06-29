@@ -337,13 +337,13 @@ def decode_result(json_str: str, full_decode: bool = True) -> Result:
     If full_decode is false, 'packets' and 'http_trace' are set to their
     empty values.
     """
-    if full_decode:
-        raise NotImplementedError("Full result decode is not yet implemented.")
-
     result = json.loads(json_str)
-    result['http_trace'] = []
-    result['packets'] = b''
 
+    if not full_decode:
+        result['http_trace'] = []
+        result['packets'] = b''
+    else:
+        result['packets'] = base64.b64decode(result["packets"])
     return result
 
 
