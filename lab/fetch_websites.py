@@ -420,9 +420,13 @@ class ProtocolSampler:
                 await asyncio.sleep(self.delay)
 
             result = await self.collect_trace(url, protocol)
+            status = result["status"]
             yield result
+            # Attempt some explicit cleanup
+            result.clear()  # type: ignore
+            del result
 
-            if result['status'] == 'success':
+            if status == 'success':
                 return
             attempts_remaining -= 1
 
