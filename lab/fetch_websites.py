@@ -51,12 +51,11 @@ class FetchFailed(Exception):
 
 
 def _chromium_quic_version_string(protocol: str) -> str:
-    if protocol.startswith('h3-Q'):
+    if protocol.startswith('h3-'):
         return protocol
     match = re.match(r'Q(\d{3})', protocol)
     if match:
         return 'QUIC_VERSION_{}'.format(int(match[1]))
-    # Versions h3-25 etc are not currently supported in Chrome 81
     raise ValueError(f"Invalid protocol string: {protocol}")
 
 
