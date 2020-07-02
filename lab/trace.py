@@ -124,7 +124,7 @@ class TraceData:
     """
     url: str
     protocol: str
-    connections: TraceStats
+    connections: Optional[TraceStats]
     trace: Trace
 
     def serialise(self) -> str:
