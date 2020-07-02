@@ -6,27 +6,15 @@ import itertools
 import subprocess
 from enum import IntEnum
 from ipaddress import IPv4Network, IPv6Network, ip_address
-from typing import (
-    Iterable, Iterator, List, NamedTuple, Optional, Sequence, Set, Tuple, Union,
-)
+from typing import List, NamedTuple, Tuple, Union, Optional
 import dataclasses
 from dataclasses import dataclass
 
 from mypy_extensions import TypedDict
-import scapy.utils
-# Bug fix for rdpcap, see scapy.ml.secdev.narkive.com/h0rkmsiG/bug-in-rdpcap
-from scapy.all import Raw  # pylint: disable=unused-import
 import pandas as pd
 
-# Disable all layers & protocols besides ethernet, IP, TCP and UDP
-scapy.layers.l2.Ether.payload_guess = [({"type": 0x800}, scapy.layers.inet.IP)]
-scapy.layers.inet.IP.payload_guess = [
-    ({"frag": 0, "proto": 0x11}, scapy.layers.inet.UDP),
-    ({"frag": 0, "proto": 0x06}, scapy.layers.inet.TCP),
-]
-scapy.layers.inet.UDP.payload_guess = []
-scapy.layers.inet.TCP.payload_guess = []
-
+Trace = List["Packet"]
+IPNetworkType = Union[IPv4Network, IPv6Network]
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -47,90 +35,10 @@ class Packet(NamedTuple):
     size: int
 
 
-Trace = List[Packet]
-IPNetworkType = Union[IPv4Network, IPv6Network]
-
-
 class ClientIndeterminable(Exception):
     """Raised if it is not possible to determine the client from the sequence of
     packets.
     """
-
-
-def _ip_layers(packets: Iterable) -> Iterator:
-    return (pkt.getlayer('IP') for pkt in packets if pkt.haslayer('IP'))
-
-
-def _common_ip(packets: Iterable, client_subnet: Optional[IPNetworkType]) \
-        -> Optional[str]:
-    """Attempts to identify an IP common to all packets. Assumes that the
-    capture was not made in promiscuous mode, and thus all packets were either
-    from or directed to the endpoint. Returns None if it does not find a
-    single such IP.
-    """
-    common_ip: Optional[Set[str]] = None
-    for ip_layer in _ip_layers(packets):
-        ips = {ip_layer.src, ip_layer.dst}
-        if common_ip is None:
-            common_ip = ips
-        else:
-            common_ip &= ips
-
-        # Stop early if no common IPs among some subset of packets
-        if not common_ip:
-            break
-
-    if common_ip and len(common_ip) == 1:
-        return common_ip.pop()
-
-    if common_ip and len(common_ip) == 2 and client_subnet:
-        if not all(ip_address(ip) in client_subnet for ip in common_ip):
-            # Exactly zero or one is in the subnet
-            for ip_addr in common_ip:
-                if ip_address(ip_addr) in client_subnet:
-                    return ip_addr
-
-    if common_ip is None:
-        _LOGGER.debug("Common IP set never initialised, were there packets?")
-    elif len(common_ip) > 1:
-        _LOGGER.debug("Could not narrow down common packets %s", common_ip)
-    elif not common_ip:
-        _LOGGER.debug("No common packets present.")
-    return None
-
-
-def _syn_originator(packets: Iterable) -> Optional[str]:
-    """Identifies the client as the IP address with originating TCP-SYN
-    packets. If there are multiple such IPs, then the function returns None.
-    """
-    with_syn: Set[str] = set()
-    for ip_layer in _ip_layers(packets):
-        if not ip_layer.haslayer('TCP'):
-            continue
-        tcp = ip_layer.getlayer('TCP')
-
-        if tcp.flags == 0b10:  # TCP SYN flag
-            with_syn.add(ip_layer.src)
-            if len(with_syn) > 1:
-                break
-
-    if len(with_syn) == 1:  # pylint: disable=no-else-return
-        return with_syn.pop()
-    elif len(with_syn) > 1:
-        _LOGGER.debug("Multiple clients with originating SYNs: %s", with_syn)
-    else:
-        _LOGGER.debug("No SYN packets found.")
-    return None
-
-
-def _has_endpoint(ip_layer, client: str) -> bool:
-    return client in (ip_layer.src, ip_layer.dst)
-
-
-def _packets_with_endpoint(packets: Iterable, client: str) -> Iterator:
-    for packet in packets:
-        if packet.haslayer('IP') and _has_endpoint(packet['IP'], client):
-            yield packet
 
 
 def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
@@ -149,10 +57,12 @@ def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
     return candidates[0]
 
 
-def pcap_to_trace(pcap: bytes, client_subnet: IPNetworkType) \
-        -> Tuple[Trace, Sequence[scapy.all.Packet]]:
+def pcap_to_trace(
+    pcap: bytes, client_subnet: IPNetworkType,
+    display_filter: Optional[str] = None
+) -> Tuple[Trace, List[Packet]]:
     """Converts a pcap to a packet trace."""
-    packets = load_pcap(pcap, str(client_subnet))
+    packets = load_pcap(pcap, str(client_subnet), display_filter)
     client = _determine_client_ip(packets, client_subnet)
 
     packets['direction'] = Direction.OUT
@@ -167,14 +77,19 @@ def pcap_to_trace(pcap: bytes, client_subnet: IPNetworkType) \
     return trace, packets
 
 
-def load_pcap(pcap: bytes, client_subnet: str) -> pd.DataFrame:
+def load_pcap(
+    pcap: bytes, client_subnet: str, display_filter: Optional[str] = None
+) -> pd.DataFrame:
     """Load the pcap into a dataframe.  Packets are filtered to those
     with an endpoint in client_subnet.
     """
     fields = ['frame.time_epoch', 'ip.src', 'ip.dst', 'ip.len', 'udp.stream',
               'tcp.stream']
-    command = ['tshark', '-r', '-',
-               '-Y', f'ip.src == {client_subnet} or ip.dst == {client_subnet}',
+
+    filter_ip = f'ip.src == {client_subnet} or ip.dst == {client_subnet}'
+    display_filter = (f'({filter_ip}) and ({display_filter})'
+                      if display_filter else filter_ip)
+    command = ['tshark', '-r', '-', '-Y', display_filter,
                '-Tfields', '-E', 'header=y', '-E', 'separator=,'] + list(
         itertools.chain.from_iterable(('-e', field) for field in fields))
 
@@ -196,9 +111,9 @@ class TraceData:
 
     Attributes
     ----------
-    domain :
-        An internet domain name.
-    protocol : 'tcp' or 'quic'
+    url :
+        The url fetched in the trace.
+    protocol :
         The protocol associated with the trace.
     connections :
         Counts of the number of 'udp' and 'tcp' flows in the trace,
@@ -207,7 +122,7 @@ class TraceData:
     trace :
         The encoded traffic trace
     """
-    domain: str
+    url: str
     protocol: str
     connections: TraceStats
     trace: Trace
