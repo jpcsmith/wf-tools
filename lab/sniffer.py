@@ -154,11 +154,11 @@ class TCPDumpPacketSniffer(PacketSniffer):
     """A wrapper around TCPDump to perform traffic sniffing."""
     start_delay = 2
     # How long to wait before terminating the sniffer
-    stop_delay = 1
+    stop_delay = 2
     buffer_size = 4096
 
     def __init__(
-        self, capture_filter: str = '', iface: Optional[str] = None,
+        self, capture_filter: str = 'udp or tcp', iface: Optional[str] = None,
         snaplen: Optional[int] = None
     ):
         self._logger = logging.getLogger(__name__)
