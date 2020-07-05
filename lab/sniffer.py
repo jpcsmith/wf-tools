@@ -106,7 +106,17 @@ class PacketSniffer:
         self._logger.info('Waiting %.2fs for sniffer to flush', self.stop_delay)
         time.sleep(self.stop_delay)
 
-        self._sniffer.stop()
+        try:
+            self._sniffer.stop()
+        except OSError as err:
+            if err.errno != 9:
+                raise
+            if self._sniffer.running:
+                self._logger.fatal('%s has been raised by the sniffer but the '
+                                   'sniffer is still running.', err)
+                raise
+            self._logger.info('%s has been suppressed as the sniffer is not '
+                              'running.', err)
 
         if not self._sniffer.results:
             self._logger.warning('Sniffing complete but failed to capture '
