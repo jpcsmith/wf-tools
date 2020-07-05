@@ -3,11 +3,16 @@
 Currently uses the scapy library and is limited to TCP/UDP packets.
 """
 import io
+import abc
+from abc import abstractmethod
 import time
 import logging
 import threading
+from typing import Optional, IO, List
+import signal
+import tempfile
 import subprocess
-from typing import Optional
+from subprocess import CompletedProcess, CalledProcessError
 
 import scapy
 import scapy.compat
@@ -29,7 +34,27 @@ class SnifferStartTimeout(Exception):
     """Raised when the sniffer fails to start due to a timeout."""
 
 
-class PacketSniffer:
+class PacketSniffer(abc.ABC):
+    """Base class for packet sniffers."""
+    @property
+    def results(self) -> bytes:
+        """Alias for pcap"""
+        return self.pcap()
+
+    @abstractmethod
+    def pcap(self) -> bytes:
+        """Return the pcap as bytes."""
+
+    @abstractmethod
+    def start(self) -> None:
+        """Begin capturing packets."""
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Stop capturing packets."""
+
+
+class ScapyPacketSniffer(PacketSniffer):
     """Class for capturing network traffic."""
     stop_delay = 1
 
@@ -53,11 +78,6 @@ class PacketSniffer:
 
         self.snaplen = snaplen
 
-    @property
-    def results(self) -> bytes:
-        """Alias for pcap"""
-        return self.pcap()
-
     def _truncate_pcap(self, pcap: bytes) -> bytes:
         assert self.snaplen is not None and self.snaplen > 0
         command = ['editcap', '-F', 'pcap', '-s', str(self.snaplen), '-', '-']
@@ -73,7 +93,7 @@ class PacketSniffer:
 
     def pcap(self) -> bytes:
         """Returns the results in pcap format serialised to bytes."""
-        pcap = PacketSniffer.to_pcap(self._sniffer.results)
+        pcap = ScapyPacketSniffer.to_pcap(self._sniffer.results)
         if self.snaplen:
             self._logger.info("Truncating packets to %d bytes", self.snaplen)
             pcap = self._truncate_pcap(pcap)
@@ -128,3 +148,83 @@ class PacketSniffer:
             res=self._sniffer.results,
             stats=[inet.TCP, inet.UDP])
         self._logger.info('Sniffing complete. %r', self._sniffer.results)
+
+
+class TCPDumpPacketSniffer(PacketSniffer):
+    """A wrapper around TCPDump to perform traffic sniffing."""
+    start_delay = 2
+    stop_delay = 0.5
+    buffer_size = 4096
+
+    def __init__(
+        self, capture_filter: str = '', iface: Optional[str] = None,
+        snaplen: int = 0
+    ):
+        self._logger = logging.getLogger(__name__)
+        self._subprocess: Optional[subprocess.Popen] = None
+        self._pcap: Optional[IO[bytes]] = None
+        self.interface = iface or 'any'
+        self.snaplen = snaplen
+        self.capture_filter = capture_filter
+        self._args: List[str] = []
+
+    def pcap(self) -> bytes:
+        assert self._pcap is not None
+        pcap_bytes = self._pcap.readall()  # type: ignore
+        self._pcap.seek(0)
+        return pcap_bytes
+
+    def is_running(self) -> bool:
+        """Returns true if the sniffer is running."""
+        return self._subprocess is not None
+
+    def start(self) -> None:
+        assert not self.is_running()
+
+        self._pcap = tempfile.NamedTemporaryFile(mode='rb', suffix='.pcap')
+        self._args = [
+            'tcpdump', '-n', '--buffer-size', str(self.buffer_size),
+            '--interface', self.interface, '--dont-verify-checksums',
+            '--no-promiscuous-mode', '--snapshot-length', str(self.snaplen),
+            '-w', self._pcap.name, self.capture_filter]
+        self._subprocess = subprocess.Popen(
+            self._args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        time.sleep(self.start_delay)
+        self._logger.info("Started tcpdump: '%s'", ' '.join(self._args))
+
+    def _terminate(self) -> CompletedProcess:
+        assert self.is_running()
+        assert self._subprocess is not None
+
+        if self._subprocess.poll() is None:
+            # Wait for tcpdump to flush, this may only work because it's in
+            # packet-buffered & immediate modes
+            self._logger.info('Waiting %.2fs for tcpdump to flush',
+                              self.stop_delay)
+            time.sleep(self.stop_delay)
+            self._logger.info("Stopping tcpdump.")
+            self._subprocess.send_signal(signal.SIGINT)
+        else:
+            self._logger.debug("tcpdump already terminated")
+
+        stdout, stderr = self._subprocess.communicate()
+        return CompletedProcess(
+            self._args, self._subprocess.poll(), stdout, stderr)
+
+    def stop(self) -> None:
+        """Stops sniffing."""
+        assert self.is_running()
+        result = self._terminate()
+
+        try:
+            result.check_returncode()
+        except CalledProcessError as err:
+            self._logger.fatal(
+                "TCPDump failed with error:\n%s", err.stderr.decode('utf-8'))
+            raise
+        else:
+            self._logger.info(
+                "TCPDump stderr output:\n%s", result.stderr.decode('utf-8'))
+            return result.stdout
+        finally:
+            self._subprocess = None
