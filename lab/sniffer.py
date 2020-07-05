@@ -153,18 +153,19 @@ class ScapyPacketSniffer(PacketSniffer):
 class TCPDumpPacketSniffer(PacketSniffer):
     """A wrapper around TCPDump to perform traffic sniffing."""
     start_delay = 2
-    stop_delay = 0.5
+    # How long to wait before terminating the sniffer
+    stop_delay = 5
     buffer_size = 4096
 
     def __init__(
         self, capture_filter: str = '', iface: Optional[str] = None,
-        snaplen: int = 0
+        snaplen: Optional[int] = None
     ):
         self._logger = logging.getLogger(__name__)
         self._subprocess: Optional[subprocess.Popen] = None
         self._pcap: Optional[IO[bytes]] = None
         self.interface = iface or 'any'
-        self.snaplen = snaplen
+        self.snaplen = snaplen or 0
         self.capture_filter = capture_filter
         self._args: List[str] = []
 
