@@ -154,7 +154,7 @@ class TCPDumpPacketSniffer(PacketSniffer):
     """A wrapper around TCPDump to perform traffic sniffing."""
     start_delay = 2
     # How long to wait before terminating the sniffer
-    stop_delay = 5
+    stop_delay = 1
     buffer_size = 4096
 
     def __init__(
@@ -171,7 +171,7 @@ class TCPDumpPacketSniffer(PacketSniffer):
 
     def pcap(self) -> bytes:
         assert self._pcap is not None
-        pcap_bytes = self._pcap.readall()  # type: ignore
+        pcap_bytes = self._pcap.read()
         self._pcap.seek(0)
         return pcap_bytes
 
@@ -224,8 +224,8 @@ class TCPDumpPacketSniffer(PacketSniffer):
                 "TCPDump failed with error:\n%s", err.stderr.decode('utf-8'))
             raise
         else:
-            self._logger.info(
-                "TCPDump stderr output:\n%s", result.stderr.decode('utf-8'))
-            return result.stdout
+            n_collected = ', '.join(result.stderr.decode('utf-8').strip()
+                                    .split('\n')[-3:])
+            self._logger.info("tcpdump complete: %s", n_collected)
         finally:
             self._subprocess = None
