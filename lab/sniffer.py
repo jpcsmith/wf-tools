@@ -251,5 +251,10 @@ def stop_process(
         except subprocess.TimeoutExpired:
             log.info("%s did not stop after %.2fs. Trying next signal",
                      name, next_timeout)
+        except subprocess.CalledProcessError as err:
+            if err.returncode in (signal.SIGTERM, signal.SIGKILL):
+                return err.stdout, err.stderr
+            raise
+
     assert False
     return None, None
