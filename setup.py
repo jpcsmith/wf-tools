@@ -57,7 +57,7 @@ setup(
     install_requires=DEPENDENCIES,
     extras_require={  # Optional
         'dev': ['flake8', 'pylint', 'mypy'],
-        'test': ['pytest'],
+        'test': ['pytest', 'pytest-timeout'],
     },
     dependency_links=[
         "git+https://github.com/secdev/scapy.git@v2.4.3rc4#egg=scapy-2.4.3rc4"

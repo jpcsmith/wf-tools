@@ -161,7 +161,7 @@ class TCPDumpPacketSniffer(PacketSniffer):
         self, capture_filter: str = 'udp or tcp', iface: Optional[str] = None,
         snaplen: Optional[int] = None
     ):
-        self._logger = logging.getLogger(__name__)
+        self._log = logging.getLogger(__name__)
         self._subprocess: Optional[subprocess.Popen] = None
         self._pcap: Optional[IO[bytes]] = None
         self.interface = iface or 'any'
@@ -191,7 +191,7 @@ class TCPDumpPacketSniffer(PacketSniffer):
         self._subprocess = subprocess.Popen(
             self._args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         time.sleep(self.start_delay)
-        self._logger.info("Started tcpdump: '%s'", ' '.join(self._args))
+        self._log.info("Started tcpdump: '%s'", ' '.join(self._args))
 
     def _terminate(self) -> CompletedProcess:
         assert self.is_running()
@@ -200,15 +200,16 @@ class TCPDumpPacketSniffer(PacketSniffer):
         if self._subprocess.poll() is None:
             # Wait for tcpdump to flush, this may only work because it's in
             # packet-buffered & immediate modes
-            self._logger.info('Waiting %.2fs for tcpdump to flush',
-                              self.stop_delay)
+            self._log.info('Waiting %.2fs for tcpdump to flush',
+                           self.stop_delay)
             time.sleep(self.stop_delay)
-            self._logger.info("Stopping tcpdump.")
-            self._subprocess.send_signal(signal.SIGINT)
-        else:
-            self._logger.debug("tcpdump already terminated")
 
-        stdout, stderr = self._subprocess.communicate()
+            stdout, stderr = stop_process(
+                self._subprocess, timeout=3, name="tcpdump")
+        else:
+            self._log.debug("tcpdump already terminated")
+            stdout, stderr = self._subprocess.communicate()
+
         return CompletedProcess(
             self._args, self._subprocess.poll(), stdout, stderr)
 
@@ -220,12 +221,35 @@ class TCPDumpPacketSniffer(PacketSniffer):
         try:
             result.check_returncode()
         except CalledProcessError as err:
-            self._logger.fatal(
+            self._log.fatal(
                 "TCPDump failed with error:\n%s", err.stderr.decode('utf-8'))
             raise
         else:
             n_collected = ', '.join(result.stderr.decode('utf-8').strip()
                                     .split('\n')[-3:])
-            self._logger.info("tcpdump complete: %s", n_collected)
+            self._log.info("tcpdump complete: %s", n_collected)
         finally:
             self._subprocess = None
+
+
+def stop_process(
+    process: subprocess.Popen, timeout: int = 5, name: str = ''
+) -> tuple:
+    """Stop the process by sending SIGINT -> SIGTERM -> SIGKILL, waiting 5
+    seconds between each pair of signals.
+    """
+    log = logging.getLogger(__name__)
+    name = name or 'process'
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+        log.info("Stopping %s with %s.", name, sig)
+        next_timeout = None if sig == signal.SIGKILL else timeout
+
+        try:
+            process.send_signal(sig)
+            return process.communicate(timeout=next_timeout)
+        except subprocess.TimeoutExpired:
+            log.info("%s did not stop after %.2fs. Trying next signal",
+                     name, next_timeout)
+    assert False
+    return None, None
