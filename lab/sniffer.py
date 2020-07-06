@@ -206,12 +206,13 @@ class TCPDumpPacketSniffer(PacketSniffer):
 
             stdout, stderr = stop_process(
                 self._subprocess, timeout=3, name="tcpdump")
+            return_code = 0
         else:
             self._log.debug("tcpdump already terminated")
             stdout, stderr = self._subprocess.communicate()
+            return_code = self._subprocess.poll()
 
-        return CompletedProcess(
-            self._args, self._subprocess.poll(), stdout, stderr)
+        return CompletedProcess(self._args, return_code, stdout, stderr)
 
     def stop(self) -> None:
         """Stops sniffing."""
