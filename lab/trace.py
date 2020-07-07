@@ -126,7 +126,7 @@ class TraceData:
     protocol: str
     connections: Optional[TraceStats]
     trace: Trace
-    region: Optional[str]
+    region: Optional[str] = None
 
     def serialise(self) -> str:
         """Serialise the trace info to a string for writing to a file."""
