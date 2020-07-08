@@ -25,6 +25,8 @@ DEPENDENCIES = [
     'matplotlib',
     'seaborn',
     'aiostream==0.4.1',
+    'tensorflow==1.15',
+    'tflearn',
 ]
 # Other dependencies include
 # - pdflatex
