@@ -5,7 +5,8 @@ from sklearn.utils.estimator_checks import parametrize_with_checks
 from sklearn.preprocessing import OneHotEncoder
 import numpy as np
 
-from lab.classifiers.p1fp import P1FPClassifierC, onehot
+from lab.classifiers.p1fp import P1FPClassifierC
+from lab.classifiers.p1fp._classifier import onehot
 
 
 @pytest.mark.skip
