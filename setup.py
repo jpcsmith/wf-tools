@@ -25,7 +25,7 @@ DEPENDENCIES = [
     'matplotlib',
     'seaborn',
     'aiostream==0.4.1',
-    'tensorflow==1.15',
+    'tensorflow==1.14',
     'tflearn',
 ]
 # Other dependencies include
@@ -35,7 +35,7 @@ DEPENDENCIES = [
 setup(
     name='lab',  # Required
     description='QUIC traffic analysis experiment sources',  # Optional
-    # url='https://github.com/pypa/sampleproject',  # Optional
+    url='https://gitlab.inf.ethz.ch/jsmith/wf-tools',  # Optional
 
     # Optional long description in README.md
     long_description=Path(
