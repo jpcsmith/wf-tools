@@ -42,7 +42,7 @@ class P1FPClassifierC(BaseEstimator, ClassifierMixin):
         encoder = OneHotEncoder(sparse=False)
         y = encoder.fit_transform(y.reshape(-1, 1))
 
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
         network = input_data(shape=[None, 1, n_features, 1], name='input')
         network = conv_2d(network, 128, 12, activation='relu', regularizer="L2")
         network = max_pool_2d(network, 10)
