@@ -1,4 +1,6 @@
-"""Extract features used in classification."""
+"""Extract features from traces for website fingerprinting
+classification.
+"""
 from typing import Sequence
 import numpy as np
 
