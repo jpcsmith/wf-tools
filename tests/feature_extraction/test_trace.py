@@ -4,16 +4,16 @@ from typing import Tuple
 import pytest
 import numpy as np
 
-from lab.classifiers.p1fp.feature_extraction import vectorize_traces
+from lab.feature_extraction.trace import extract_sizes, extract_sizes_3d
 
 
 @pytest.fixture(name="sample_traces")
 def fixture_sample_traces() -> Tuple[list, np.ndarray]:
     """Returns a simple list of traces."""
     traces = [
-        [(0, 1, 1350), (0.01, 1, 1350), (0.02, -1, 600), (0.03, 1, 70)],
-        [(0, 1, 1300), (0.015, 1, 1350), (0.025, 1, 1200)],
-        [(0, 1, 1200), (0.02, 1, 1350)],
+        [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
+        [(0, 1300), (0.015, 1350), (0.025, 1200)],
+        [(0, 1200), (0.02, 1350)],
     ]
     expected_features = np.array([
         [1350, 1350, -600, 70],
@@ -23,26 +23,46 @@ def fixture_sample_traces() -> Tuple[list, np.ndarray]:
     return traces, expected_features
 
 
-def test_vectorize_traces(sample_traces):
-    """It should create features from the vectorized traces."""
+def test_extract_sizes_single_trace():
+    """It should extract the sizes for a single trace."""
+    assert np.array_equal(
+        extract_sizes([(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)]),
+        [1350, 1350, -600, 70])
+    assert np.array_equal(
+        extract_sizes([(0, 1300), (0.015, 1350), (0.025, 1200)]),
+        [1300, 1350, 1200])
+    assert np.array_equal(
+        extract_sizes([(0, 1200), (0.02, 1350)]),
+        [1200, 1350])
+
+
+def test_extract_sizes_pad(sample_traces):
+    """It should pad traces to the specified dimension."""
     traces, features = sample_traces
-    result = vectorize_traces(traces, n_features=features.shape[1])
-    assert np.array_equal(result, features)
+    features = np.concatenate(
+        (features, np.zeros((features.shape[0], 2))), axis=1)
+
+    for trace, expected in zip(traces, features):
+        assert np.array_equal(extract_sizes(trace, dimension=6), expected)
 
 
-def test_vectorize_traces_truncate(sample_traces):
-    """It should truncate long traces to the specified number of
-    features.
+def test_extract_sizes_truncate(sample_traces):
+    """It should truncate traces to the specified dimension."""
+    traces, features = sample_traces
+    for trace, expected in zip(traces, features[:, :2]):
+        assert np.array_equal(extract_sizes(trace, dimension=2), expected)
+
+
+def test_extract_sizes_3d(sample_traces):
+    """It should work with matices of traces as well.
     """
     traces, features = sample_traces
-    result = vectorize_traces(traces, n_features=2)
-    assert np.array_equal(result, features[:, :2])
+    assert np.array_equal(extract_sizes_3d(traces, dimension=3),
+                          features[:, :3])
 
 
-def test_vectorize_pad(sample_traces):
-    """It should pad short traces to the specified number of features.
+def test_extract_sizes_3d_infer(sample_traces):
+    """It should infer the dimension if not specified.
     """
     traces, features = sample_traces
-    result = vectorize_traces(traces, n_features=6)
-    assert np.array_equal(result, np.concatenate(
-        (features, np.zeros((features.shape[0], 2))), axis=1))
+    assert np.array_equal(extract_sizes_3d(traces), features)

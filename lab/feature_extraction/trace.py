@@ -1,32 +1,47 @@
 """Extract features from traces for website fingerprinting
 classification.
 """
-from typing import Sequence
 import numpy as np
 
 
-def vectorize_trace(trace: Sequence, n_features: int):
-    """Vectorize the trace, extracting features used by the p1-FP(C)
-    classifier.
+def extract_sizes(trace, dimension: int = 0) -> np.ndarray:
+    """Extract the signed sizes from the trace.
 
-    Traces longer than n_features are truncated, traces shorter are
-    padded with zero.
+    Parameters
+    ----------
+    trace : array-like of shape (n_packets, 2)
+        trace is a sequence of n_packets, where each packet stores the
+        timestamp and signed size.
+
+    dimension :
+        If dimension is greater than zero, truncate or pad the resulting
+        feature vector the specified dimension.
     """
+    assert dimension >= 0
+
     # Truncate the trace to the required length if longer
-    trace = trace[:n_features]
+    if dimension > 0:
+        trace = trace[:dimension]
 
-    # Convert and padd
-    padding_len = n_features - len(trace)
-    return np.array([packet[1] * packet[2] for packet in trace]
-                    # A negative padding_len results in no padding being added
-                    + [0] * padding_len)
+    # Convert and pad
+    padding_len = dimension - len(trace)
+    # A negative padding_len results in no padding being added
+    return np.array([pkt[1] for pkt in trace] + [0] * padding_len)
 
 
-def vectorize_traces(traces: Sequence[Sequence], n_features: int) -> np.ndarray:
-    """Vectorize multiple traces, extracting features used by the p1-FP(C)
-    classifier.
+def extract_sizes_3d(X, dimension: int = 0) -> np.ndarray:
+    """Convenience method around extract_sizes for a sequence of traces.
 
-    Traces longer than n_features are truncated, traces shorter are
-    padded with zero.
+    Parameters:
+    -----------
+    X : Sequence of array-likes each with shape (n_packets(i), 2)
+        A possibly ragged sequence of traces.
+
+    dimension :
+        If dimension is greater than zero, truncate or pad the resulting
+        feature vector the specified dimension. If not specified, the
+        dimension will be the length of the longest trace in X.
     """
-    return np.array([vectorize_trace(trace, n_features) for trace in traces])
+    assert dimension >= 0
+    dimension = dimension or max(len(trace) for trace in X)
+    return np.array([extract_sizes(trace, dimension) for trace in X])
