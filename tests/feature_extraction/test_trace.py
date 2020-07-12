@@ -141,3 +141,15 @@ def test_extract_metadata_unspecified(sample_traces):
     """It should return all of the metadata if unspecified."""
     n_features = 12
     assert extract_metadata(sample_traces[0]).shape == (3, n_features)
+
+
+def test_extract_metadata_subsets(sample_traces):
+    """It should return some of the metadata only."""
+    assert extract_metadata(
+        sample_traces[0],
+        metadata=(Metadata.SIZE_METADATA | Metadata.TIME_METADATA)).shape \
+        == (3, 7)
+    assert extract_metadata(
+        sample_traces[0],
+        metadata=(Metadata.SIZE_METADATA | Metadata.COUNT_METADATA)).shape \
+        == (3, 10)
