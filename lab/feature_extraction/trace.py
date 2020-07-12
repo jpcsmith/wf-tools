@@ -99,6 +99,9 @@ def extract_metadata(
     times = X[:, :, 0]
     sizes = X[:, :, 1]
 
+    # Include all features if unspecified
+    metadata = metadata or ~Metadata.UNSPECIFIED
+
     results = {}
 
     results[Metadata.PACKET_COUNT] = np.sum((sizes != 0), axis=1)

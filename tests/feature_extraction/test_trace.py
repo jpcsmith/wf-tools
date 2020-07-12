@@ -121,3 +121,9 @@ def test_extract_metadata_count_metadata(sample_traces):
     np.testing.assert_allclose(
         extract_metadata(sample_traces[0], metadata=Metadata.COUNT_METADATA),
         [[4, 3, 1, 3/4, 1/4], [3, 3, 0, 3/3, 0], [2, 2, 0, 2/2, 0]])
+
+
+def test_extract_metadata_unspecified(sample_traces):
+    """It should return all of the metadata if unspecified."""
+    n_features = 7
+    assert extract_metadata(sample_traces[0]).shape == (3, n_features)
