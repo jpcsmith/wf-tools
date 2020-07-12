@@ -82,10 +82,18 @@ class Metadata(enum.Flag):
     DURATION = enum.auto()
     DURATION_PER_PACKET = enum.auto()
 
+    TRANSFER_SIZE = enum.auto()
+    OUTGOING_SIZE = enum.auto()
+    INCOMING_SIZE = enum.auto()
+    OUTGOING_SIZE_RATIO = enum.auto()
+    INCOMING_SIZE_RATIO = enum.auto()
+
     # These have to be placed last, or enum.auto() reassigns values
     COUNT_METADATA = PACKET_COUNT | OUTGOING_COUNT | INCOMING_COUNT \
         | OUTGOING_RATIO | INCOMING_RATIO
     TIME_METADATA = DURATION | DURATION_PER_PACKET
+    SIZE_METADATA = TRANSFER_SIZE | OUTGOING_SIZE | INCOMING_SIZE \
+        | OUTGOING_SIZE_RATIO | INCOMING_SIZE_RATIO
 
 
 def extract_metadata(
@@ -99,7 +107,7 @@ def extract_metadata(
     times = X[:, :, 0]
     sizes = X[:, :, 1]
 
-    # Include all features if unspecified
+    # Include all metadata if unspecified
     metadata = metadata or ~Metadata.UNSPECIFIED
 
     results = {}
@@ -116,9 +124,23 @@ def extract_metadata(
     results[Metadata.DURATION_PER_PACKET] = \
         results[Metadata.DURATION] / results[Metadata.PACKET_COUNT]
 
+    results[Metadata.TRANSFER_SIZE] = np.sum(np.abs(sizes), axis=1)
+    results[Metadata.OUTGOING_SIZE] = np.sum(np.where(sizes > 0, sizes, 0),
+                                             axis=1)
+    results[Metadata.INCOMING_SIZE] = np.sum(
+        np.where(sizes < 0, np.abs(sizes), 0), axis=1)
+    results[Metadata.OUTGOING_SIZE_RATIO] = \
+        results[Metadata.OUTGOING_SIZE] / results[Metadata.TRANSFER_SIZE]
+    results[Metadata.INCOMING_SIZE_RATIO] = \
+        results[Metadata.INCOMING_SIZE] / results[Metadata.TRANSFER_SIZE]
+
     order = [
         Metadata.PACKET_COUNT, Metadata.OUTGOING_COUNT, Metadata.INCOMING_COUNT,
         Metadata.OUTGOING_RATIO, Metadata.INCOMING_RATIO,
+
         Metadata.DURATION, Metadata.DURATION_PER_PACKET,
+
+        Metadata.TRANSFER_SIZE, Metadata.OUTGOING_SIZE, Metadata.INCOMING_SIZE,
+        Metadata.OUTGOING_SIZE_RATIO, Metadata.INCOMING_SIZE_RATIO,
     ]
     return np.transpose(list(results[m] for m in order if m in metadata))

@@ -117,13 +117,27 @@ def test_extract_metadata_outgoing_ratio(sample_traces):
 
 
 def test_extract_metadata_count_metadata(sample_traces):
-    """It should extract all ount metadata from the traces."""
+    """It should extract all count metadata from the traces."""
     np.testing.assert_allclose(
         extract_metadata(sample_traces[0], metadata=Metadata.COUNT_METADATA),
         [[4, 3, 1, 3/4, 1/4], [3, 3, 0, 3/3, 0], [2, 2, 0, 2/2, 0]])
 
 
+def test_extract_metadata_size_metadata(sample_traces):
+    """It should extract all size metadata from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.SIZE_METADATA),
+        np.transpose([
+            # Sizes
+            [3370, 3850, 2550],
+            # Outgoing and incoming sizes
+            [2770, 3850, 2550], [600, 0, 0],
+            # Outgoing and incoming size ratio
+            [2770/3370, 1, 1], [600/3370, 0, 0],
+        ]))
+
+
 def test_extract_metadata_unspecified(sample_traces):
     """It should return all of the metadata if unspecified."""
-    n_features = 7
+    n_features = 12
     assert extract_metadata(sample_traces[0]).shape == (3, n_features)
