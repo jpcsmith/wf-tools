@@ -113,26 +113,29 @@ def extract_metadata(
     results = {}
 
     results[Metadata.PACKET_COUNT] = np.sum((sizes != 0), axis=1)
-    results[Metadata.OUTGOING_COUNT] = np.sum((sizes > 0), axis=1)
-    results[Metadata.INCOMING_COUNT] = np.sum((sizes < 0), axis=1)
-    results[Metadata.OUTGOING_RATIO] = \
-        results[Metadata.OUTGOING_COUNT] / results[Metadata.PACKET_COUNT]
-    results[Metadata.INCOMING_RATIO] = \
-        results[Metadata.INCOMING_COUNT] / results[Metadata.PACKET_COUNT]
+    if Metadata.COUNT_METADATA | metadata:
+        results[Metadata.OUTGOING_COUNT] = np.sum((sizes > 0), axis=1)
+        results[Metadata.INCOMING_COUNT] = np.sum((sizes < 0), axis=1)
+        results[Metadata.OUTGOING_RATIO] = \
+            results[Metadata.OUTGOING_COUNT] / results[Metadata.PACKET_COUNT]
+        results[Metadata.INCOMING_RATIO] = \
+            results[Metadata.INCOMING_COUNT] / results[Metadata.PACKET_COUNT]
 
-    results[Metadata.DURATION] = np.amax(times, axis=1)
-    results[Metadata.DURATION_PER_PACKET] = \
-        results[Metadata.DURATION] / results[Metadata.PACKET_COUNT]
+    if Metadata.TIME_METADATA | metadata:
+        results[Metadata.DURATION] = np.amax(times, axis=1)
+        results[Metadata.DURATION_PER_PACKET] = \
+            results[Metadata.DURATION] / results[Metadata.PACKET_COUNT]
 
-    results[Metadata.TRANSFER_SIZE] = np.sum(np.abs(sizes), axis=1)
-    results[Metadata.OUTGOING_SIZE] = np.sum(np.where(sizes > 0, sizes, 0),
-                                             axis=1)
-    results[Metadata.INCOMING_SIZE] = np.sum(
-        np.where(sizes < 0, np.abs(sizes), 0), axis=1)
-    results[Metadata.OUTGOING_SIZE_RATIO] = \
-        results[Metadata.OUTGOING_SIZE] / results[Metadata.TRANSFER_SIZE]
-    results[Metadata.INCOMING_SIZE_RATIO] = \
-        results[Metadata.INCOMING_SIZE] / results[Metadata.TRANSFER_SIZE]
+    if Metadata.SIZE_METADATA | metadata:
+        results[Metadata.TRANSFER_SIZE] = np.sum(np.abs(sizes), axis=1)
+        results[Metadata.OUTGOING_SIZE] = np.sum(np.where(sizes > 0, sizes, 0),
+                                                 axis=1)
+        results[Metadata.INCOMING_SIZE] = np.sum(
+            np.where(sizes < 0, np.abs(sizes), 0), axis=1)
+        results[Metadata.OUTGOING_SIZE_RATIO] = \
+            results[Metadata.OUTGOING_SIZE] / results[Metadata.TRANSFER_SIZE]
+        results[Metadata.INCOMING_SIZE_RATIO] = \
+            results[Metadata.INCOMING_SIZE] / results[Metadata.TRANSFER_SIZE]
 
     order = [
         Metadata.PACKET_COUNT, Metadata.OUTGOING_COUNT, Metadata.INCOMING_COUNT,
