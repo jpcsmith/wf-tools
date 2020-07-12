@@ -6,8 +6,8 @@ import pytest
 import numpy as np
 
 from lab.feature_extraction.trace import (
-    extract_sizes, extract_sizes_3d, extract_interarrival_times,
-    extract_interarrival_times_3d
+    extract_sizes, extract_interarrival_times, pad_traces,
+    extract_metadata, Metadata
 )
 
 
@@ -16,8 +16,8 @@ def fixture_sample_traces() -> Tuple[list, np.ndarray, np.ndarray]:
     """Returns a simple list of traces."""
     traces = [
         [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
-        [(0, 1300), (0.015, 1350), (0.025, 1200)],
-        [(0, 1200), (0.02, 1350)],
+        [(0, 1300), (0.015, 1350), (0.025, 1200), (0, 0)],
+        [(0, 1200), (0.02, 1350), (0, 0), (0, 0)],
     ]
     expected_features = np.array([
         [1350, 1350, -600, 70],
@@ -32,99 +32,92 @@ def fixture_sample_traces() -> Tuple[list, np.ndarray, np.ndarray]:
     return traces, expected_features, expected_interarrivals
 
 
-def test_extract_interarrival_times_pad():
-    """It should pad the extracted interarrival times to the specified
-    dimension.
-    """
-    np.testing.assert_allclose(
-        extract_interarrival_times(
-            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)], dimension=4),
-        [0, 0.01, 0.01, 0.01])
-    np.testing.assert_allclose(
-        extract_interarrival_times([(0, 1300), (0.015, 1350), (0.025, 1200)],
-                                   dimension=4),
-        [0, 0.015, 0.01, 0.00])
-    np.testing.assert_allclose(
-        extract_interarrival_times(
-            [(0, 1200), (0.02, 1350)], dimension=4), [0, 0.02, 0.00, 0.00])
-
-
-def test_extract_interarrival_times():
-    """It should extract the interarrival times from the traces."""
-    np.testing.assert_allclose(
-        extract_interarrival_times(
-            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)]
-        ), [0, 0.01, 0.01, 0.01])
-    np.testing.assert_allclose(
-        extract_interarrival_times([(0, 1300), (0.015, 1350), (0.025, 1200)]),
-        [0, 0.015, 0.01])
-    np.testing.assert_allclose(
-        extract_interarrival_times([(0, 1200), (0.02, 1350)]), [0, 0.02])
-
-
-def test_extract_interarrival_times_3d(sample_traces):
+def test_extract_interarrival_times(sample_traces):
     """It should extract the interarrival times from the traces
     and pad to the specified dimension.
     """
     traces, _, expected_times = sample_traces
 
     np.testing.assert_allclose(
-        extract_interarrival_times_3d(traces, dimension=4), expected_times)
+        extract_interarrival_times(traces), expected_times)
 
 
-def test_extract_interarrival_times_3d_truncate(sample_traces):
-    """It should extract the interarrival times from the traces
-    and truncate them to the specified dimension.
+def test_extract_sizes(sample_traces):
+    """It extract the sizes from the traces.
     """
-    traces, _, expected_times = sample_traces
+    traces, features, *_ = sample_traces
+    np.testing.assert_array_equal(extract_sizes(traces), features)
 
+
+def test_pad_traces():
+    """It should pad the traces to the length of the longest trace."""
     np.testing.assert_allclose(
-        extract_interarrival_times_3d(traces, dimension=2),
-        expected_times[:, :2])
+        pad_traces([
+            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
+            [(0, 1300), (0.015, 1350), (0.025, 1200)],
+            [(0, 1200), (0.02, 1350)],
+        ]),
+        np.array([
+            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
+            [(0, 1300), (0.015, 1350), (0.025, 1200), (0.0, 0)],
+            [(0, 1200), (0.02, 1350), (0.0, 0), (0.0, 0)],
+        ]))
 
 
-def test_extract_sizes_single_trace():
-    """It should extract the sizes for a single trace."""
-    np.testing.assert_array_equal(
-        extract_sizes([(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)]),
-        [1350, 1350, -600, 70])
-    np.testing.assert_array_equal(
-        extract_sizes([(0, 1300), (0.015, 1350), (0.025, 1200)]),
-        [1300, 1350, 1200])
-    np.testing.assert_array_equal(
-        extract_sizes([(0, 1200), (0.02, 1350)]),
-        [1200, 1350])
+def test_extract_metadata_duration(sample_traces):
+    """It should extract duration metadata from the traces."""
+    traces, *_ = sample_traces
+    np.testing.assert_allclose(
+        extract_metadata(traces, metadata=Metadata.DURATION),
+        # [[0.03, 0.03/4], [0.025, 0.025/3], [0.02, 0.02/2]])
+        [[0.03], [0.025], [0.02]])
 
 
-def test_extract_sizes_pad(sample_traces):
-    """It should pad traces to the specified dimension."""
-    traces, features, *_ = sample_traces
-    features = np.concatenate(
-        (features, np.zeros((features.shape[0], 2))), axis=1)
-
-    for trace, expected in zip(traces, features):
-        np.testing.assert_array_equal(
-            extract_sizes(trace, dimension=6), expected)
+def test_extract_metadata_duration_per_packet(sample_traces):
+    """It should extract duration per packet from the traces."""
+    traces, *_ = sample_traces
+    np.testing.assert_allclose(
+        extract_metadata(traces, metadata=Metadata.DURATION_PER_PACKET),
+        [[0.03/4], [0.025/3], [0.02/2]])
 
 
-def test_extract_sizes_truncate(sample_traces):
-    """It should truncate traces to the specified dimension."""
-    traces, features, *_ = sample_traces
-    for trace, expected in zip(traces, features[:, :2]):
-        np.testing.assert_array_equal(
-            extract_sizes(trace, dimension=2), expected)
+def test_extract_metadata_packet_count(sample_traces):
+    """It should extract total packet count metadata from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.PACKET_COUNT),
+        [[4], [3], [2]])
 
 
-def test_extract_sizes_3d(sample_traces):
-    """It should work with matices of traces as well.
-    """
-    traces, features, *_ = sample_traces
-    np.testing.assert_array_equal(
-        extract_sizes_3d(traces, dimension=3), features[:, :3])
+def test_extract_metadata_outgoing_count(sample_traces):
+    """It should extract outgoing packet count metadata from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.OUTGOING_COUNT),
+        [[3], [3], [2]])
 
 
-def test_extract_sizes_3d_infer(sample_traces):
-    """It should infer the dimension if not specified.
-    """
-    traces, features, *_ = sample_traces
-    np.testing.assert_array_equal(extract_sizes_3d(traces), features)
+def test_extract_metadata_incoming_count(sample_traces):
+    """It should extract incoming packet count metadata from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.INCOMING_COUNT),
+        [[1], [0], [0]])
+
+
+def test_extract_metadata_incoming_ratio(sample_traces):
+    """It should extract incoming packet ratio from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.INCOMING_RATIO),
+        [[1/4], [0/3], [0/2]])
+
+
+def test_extract_metadata_outgoing_ratio(sample_traces):
+    """It should extract outgoing packet ratio from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.OUTGOING_RATIO),
+        [[3/4], [3/3], [2/2]])
+
+
+def test_extract_metadata_count_metadata(sample_traces):
+    """It should extract all ount metadata from the traces."""
+    np.testing.assert_allclose(
+        extract_metadata(sample_traces[0], metadata=Metadata.COUNT_METADATA),
+        [[4, 3, 1, 3/4, 1/4], [3, 3, 0, 3/3, 0], [2, 2, 0, 2/2, 0]])
