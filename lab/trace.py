@@ -60,9 +60,12 @@ def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
 def pcap_to_trace(
     pcap: bytes, client_subnet: IPNetworkType,
     display_filter: Optional[str] = None
-) -> Tuple[Trace, List[Packet]]:
+) -> Tuple[Trace, pd.DataFrame]:
     """Converts a pcap to a packet trace."""
     packets = load_pcap(pcap, str(client_subnet), display_filter)
+    if len(packets) == 0:
+        return [], packets
+
     client = _determine_client_ip(packets, client_subnet)
 
     packets['direction'] = Direction.OUT
