@@ -51,7 +51,17 @@ def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
     candidates = [ip for ip in unique_ips if ip_address(ip) in client_subnet]
 
     if not candidates:
-        raise ClientIndeterminable("No source IPs were in the subnet.")
+        # There were no IPs from the source in the subnet. This can happen
+        # due to tcpdump being overloaded and dropping packets. See if we can
+        # find the client IP in the destination IPs
+        unique_ips = set(unique_ips)
+        unique_ips.update(packets['ip.dst'].unique())
+        candidates = [ip for ip in unique_ips if ip_address(ip) in
+                      client_subnet]
+
+    if not candidates:
+        raise ClientIndeterminable(
+            f"No source nor destination IPs were in the subnet: {unique_ips}.")
     if len(candidates) > 1:
         raise ClientIndeterminable(f"Too many client candidates {candidates}.")
     return candidates[0]
