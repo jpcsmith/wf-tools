@@ -41,6 +41,10 @@ class ClientIndeterminable(Exception):
     """
 
 
+class PcapParsingError(Exception):
+    """Raised when we fail to parse the pcap."""
+
+
 def _determine_client_ip(packets: pd.DataFrame, client_subnet) -> str:
     """Determines the IP address of the client from the sequence of packets.
 
@@ -106,8 +110,11 @@ def load_pcap(
                '-Tfields', '-E', 'header=y', '-E', 'separator=,'] + list(
         itertools.chain.from_iterable(('-e', field) for field in fields))
 
-    result = subprocess.run(
-        command, input=pcap, check=True, capture_output=True)
+    try:
+        result = subprocess.run(
+            command, input=pcap, check=True, capture_output=True)
+    except subprocess.CalledProcessError as err:
+        raise PcapParsingError(err.stderr.decode("utf-8").strip()) from err
 
     return (pd.read_csv(io.BytesIO(result.stdout))
             .sort_values(by='frame.time_epoch'))
