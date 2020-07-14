@@ -11,25 +11,22 @@ to be used more flexibly.
 The original can be found at https://github.com/sanjit-bhat/Var-CNN.
 """
 # pylint: disable=too-many-arguments,invalid-name,too-many-instance-attributes
-import math
-import time
-import logging
-from typing import FrozenSet, Optional
+# pylint: disable=too-few-public-methods
+from typing import Optional
 
-from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils import check_array, check_random_state
-from sklearn.utils.validation import check_is_fitted
-from sklearn.preprocessing import OneHotEncoder
-from tensorflow.compat.v1 import keras, Variable
-from tensorflow.compat.v1.keras import layers
 import numpy as np
+from tensorflow.compat.v1 import keras
+from tensorflow.compat.v1.keras import layers
+from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
 
 
 PARAMETERS = {'kernel_initializer': 'he_normal'}
 
 
 class Crop(layers.Layer):
-    """Crop the input along axis 1.
+    """Crop the input along axis 1, returning inputs[:, start:end].
+    One of start and end can be none, in which case it's equivalent to
+    inputs[:, :end] and inputs[:, start:] respectively.
     """
     def __init__(
         self,
@@ -41,8 +38,6 @@ class Crop(layers.Layer):
         assert start is not None or end is not None
         self.start = start
         self.end = end
-        # self.start = Variable(initial_value=start, trainable=False)
-        # self.end = Variable(inital_value=end, trainable=False)
 
     def call(self, inputs):
         """Run the layer."""
@@ -53,181 +48,112 @@ class Crop(layers.Layer):
         return {"start": self.start, "end": self.end}
 
 
+def build_model(
+    n_classes: int,
+    n_packet_features: int,
+    n_meta_features: int = 7,
+    dilations: bool = True,
+    tag: str = "varcnn",
+):
+    """Build the Var-CNN model.
+
+    The resulting model takes a single input of shape
+    (n_samples, n_packet_features + n_meta_features). The meta features
+    must be the rightmost (last) features in the matrix.  The model
+    handles separating the two types of features and reshaping them
+    as necessary.
+
+    Parameters:
+    -----------
+    n_classes :
+        The number of classes to be predicted.
+
+    n_packet_features :
+        The number of packet features such as the number of interarrival
+        times or the number of packet directions or sizes.
+
+    n_meta_features:
+        The number of meta features such as total packet counts, total
+        transmission duration, etc.
+    """
+    use_metadata = n_meta_features > 0
+
+    # Constructs dir or time ResNet
+    input_layer = keras.Input(
+        shape=(n_packet_features + n_meta_features, ), name="input")
+
+    layer = (Crop(end=n_packet_features)(input_layer)
+             if use_metadata else input_layer)
+    layer = layers.Reshape((n_packet_features, 1))(layer)
+    output_layer = ResNet18(
+        layer, tag, block=(dilated_basic_1d if dilations else basic_1d))
+
+    concat_params = [output_layer]
+    combined = concat_params[0]
+
+    # Construct MLP for metadata
+    if use_metadata:
+        metadata_output = Crop(start=-n_meta_features)(input_layer)
+        # consider this the embedding of all the metadata
+        metadata_output = layers.Dense(32)(metadata_output)
+        metadata_output = layers.BatchNormalization()(
+            metadata_output)
+        metadata_output = layers.Activation('relu')(metadata_output)
+
+        concat_params.append(metadata_output)
+        combined = layers.Concatenate()(concat_params)
+
+    # Better to have final fc layer if combining multiple models
+    if len(concat_params) > 1:
+        combined = layers.Dense(1024)(combined)
+        combined = layers.BatchNormalization()(combined)
+        combined = layers.Activation('relu')(combined)
+        combined = layers.Dropout(0.5)(combined)
+
+    model_output = layers.Dense(units=n_classes, activation='softmax',
+                                name='model_output')(combined)
+
+    model = keras.Model(inputs=input_layer, outputs=model_output)
+    model.compile(loss='categorical_crossentropy', metrics=['accuracy'],
+                  optimizer=keras.optimizers.Adam(0.001))
+
+    return model
+
+
 # TODO: Allow saving the model for later
-class VarCNNClassifier(BaseEstimator, ClassifierMixin):
+class VarCNNClassifier(KerasClassifier):
     """Var-CNN classifier using a CNN with either timing or direction
     based features.
     """
-    # TODO: We may need to re-evaluate how we combine the timing and direction
-    # features in the ensemble, as we are no longer using simple directions.
     def __init__(
         self,
-        base_patience: int = 5,
-        mixture: FrozenSet[str] = frozenset(("dir", "metadata")),
-        dilations: bool = True,
-        epochs: int = 150,
-        batch_size: int = 50,
+        n_classes: int,
+        n_packet_features: int,
         n_meta_features: int = 7,
-        random_state=None,
+        dilations: bool = True,
+        tag: str = "varcnn",
+        base_patience: int = 5,
+        **kwargs
     ):
         assert n_meta_features >= 0
-
-        self.base_patience = base_patience
-        self.mixture = mixture
-        self.tag = "dir" if "dir" in mixture else "time"
-        self.dilations = dilations
-        self.model_name = "var-cnn"
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self.n_meta_features = n_meta_features
-        self.random_state = random_state
-        self._logger = logging.getLogger(__name__ + "." + self.model_name)
-
-    def _init_model(self, n_classes: int, n_features: int):
-        """Initialise and return the model and callbacks."""
-        use_metadata = self.n_meta_features > 0
-
-        n_total_features = n_features + self.n_meta_features
-
-        # Constructs dir or time ResNet
-        block = dilated_basic_1d if self.dilations else basic_1d
-        input_layer = keras.Input(
-            shape=(n_total_features, ), name=(self.tag + '_input'))
-
-        if use_metadata:
-            reshape_layer = Crop(end=-self.n_meta_features)(input_layer)
-        else:
-            reshape_layer = input_layer
-        reshape_layer = layers.Reshape((n_features, 1))(reshape_layer)
-        output_layer = ResNet18(reshape_layer, self.tag, block=block)
-
-        # Construct MLP for metadata
-        if use_metadata:
-            metadata_output = Crop(start=-self.n_meta_features)(input_layer)
-            # metadata_input = keras.Input(
-            #     shape=(self.n_meta_features, ), name='metadata_input')
-            # consider this the embedding of all the metadata
-            metadata_output = layers.Dense(32)(metadata_output)
-            metadata_output = layers.BatchNormalization()(
-                metadata_output)
-            metadata_output = layers.Activation('relu')(metadata_output)
-
-        # Forms input and output lists and possibly add final dense layer
-        input_params = [input_layer]
-        concat_params = [output_layer]
-        combined = concat_params[0]
-
-        if use_metadata:
-            # input_params.append(metadata_input)
-            concat_params.append(metadata_output)
-            combined = layers.Concatenate()(concat_params)
-
-        # Better to have final fc layer if combining multiple models
-        if len(concat_params) > 1:
-            combined = layers.Dense(1024)(combined)
-            combined = layers.BatchNormalization()(combined)
-            combined = layers.Activation('relu')(combined)
-            combined = layers.Dropout(0.5)(combined)
-
-        model_output = layers.Dense(units=n_classes, activation='softmax',
-                                    name='model_output')(combined)
-
-        model = keras.Model(inputs=input_params, outputs=model_output)
-        model.compile(loss='categorical_crossentropy', metrics=['accuracy'],
-                      optimizer=keras.optimizers.Adam(0.001))
-
-        callbacks = [
-            keras.callbacks.ReduceLROnPlateau(
-                monitor='val_acc', factor=np.sqrt(0.1), cooldown=0, min_lr=1e-5,
-                patience=self.base_patience, verbose=1),
-            keras.callbacks.EarlyStopping(
-                monitor='val_acc', patience=(2 * self.base_patience)),
-            keras.callbacks.ModelCheckpoint(
-                'model_weights.h5', monitor='val_acc', save_best_only=True,
-                save_weights_only=True, verbose=1)
-        ]
-
-        return model, callbacks
-
-    def _split_features(self, X) -> tuple:
-        """Return a tuple of (X_traces, X_meta), with both feature sets
-        reshaped as necessary.
-        """
-        n_trace_features = X.shape[1] - self.n_meta_features
-        X_traces = X[:, :-self.n_meta_features].reshape(
-            (-1, n_trace_features, 1))
-        X_meta = X[:, -self.n_meta_features]
-        return (X_traces, X_meta)
-
-    def fit(self, X, y):
-        """Fit the Var-CNN model.
-
-        Parameters:
-        ----------
-        X : array-like of shape (n_samples, n_trace_features + n_meta_features)
-            The training input samples.  For a positive n_meta_features,
-            X is split and trace and meta features are passed to the
-            appropriate CNN inputs.
-
-        y : array-like of shape (n_samples, )
-            The target class labels. Must be numeric.
-        """
-        X = check_array(X, accept_sparse=False,
-                        ensure_min_features=(1 + self.n_meta_features))
-        y = check_array(y, accept_sparse=False, ensure_2d=False)
-
-        # Shuffle the features, as this is less error prone than
-        # remembering to do it, and a fraction of the dataset is taken
-        # for validation without shuffling.
-        random_state = check_random_state(self.random_state)
-        permutation = random_state.permutation(X.shape[0])
-        X = X[permutation]
-        y = y[permutation]
-        X_traces, X_meta = self._split_features(X)
-
-        n_classes = np.unique(y).size
-        encoder = OneHotEncoder(sparse=False)
-        # TODO: Is this reshape necessary?
-        y = encoder.fit_transform(y.reshape(-1, 1))
-
-        # pylint: disable=attribute-defined-outside-init
-        self.n_features_ = X.shape[1]
-        self.classes_ = encoder.categories_[0]
-        self.model_, callbacks = self._init_model(
-            n_classes, (self.n_features_ - self.n_meta_features))
-
-        return self.model_
-
-        # self._logger.info("Starting training ... ")
-        # start_time = time.perf_counter()
-        # self.model_.fit(
-        #     {(self.tag + "_input"): X_traces, "metadata_input": X_meta},
-        #     {"model_output": y}, validation_split=0.1, epochs=self.epochs,
-        #     verbose=2, callbacks=callbacks, shuffle=False)
-        # self._logger.info(
-        #     "Training complete in %.2fs", (time.perf_counter() - start_time))
-        # return self
-
-    def predict(self, X):
-        """Compute and save final predictions on test set."""
-        check_is_fitted(self, ["model_", "n_features_"])
-        X = check_array(
-            X, accept_sparse=False, ensure_min_features=self.n_features_)
-        X_traces, X_meta = self._split_features(X)
-
-        test_size = X.shape[0]
-        steps = math.ceil(test_size // self.batch_size)
-
-        self._logger.info("Starting predictions ... ")
-        start = time.perf_counter()
-
-        predictions = self.model_.predict(
-            [X_traces, X_meta], batch_size=self.batch_size, steps=steps,
-            verbose=0)
-
-        self._logger.info(
-            "Prediction complete in %.2fs.", (time.perf_counter() - start))
-        return predictions
+        super().__init__(
+            build_fn=build_model,
+            n_classes=n_classes,
+            n_packet_features=n_packet_features,
+            n_meta_features=n_meta_features,
+            dilations=dilations,
+            tag=tag,
+            callbacks=[
+                keras.callbacks.ReduceLROnPlateau(
+                    monitor='val_acc', factor=np.sqrt(0.1), cooldown=0,
+                    min_lr=1e-5, patience=base_patience, verbose=1),
+                keras.callbacks.EarlyStopping(
+                    monitor='val_acc', patience=(2 * base_patience)),
+                keras.callbacks.ModelCheckpoint(
+                    'model_weights.h5', monitor='val_acc', save_best_only=True,
+                    save_weights_only=True, verbose=1)
+            ],
+            **kwargs)
 
 
 # Code for standard ResNet model is based on
