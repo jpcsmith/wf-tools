@@ -5,8 +5,7 @@ from sklearn.utils.estimator_checks import parametrize_with_checks
 from sklearn.preprocessing import OneHotEncoder
 import numpy as np
 
-from lab.classifiers.p1fp import P1FPClassifierC
-from lab.classifiers.p1fp._classifier import onehot
+from lab.classifiers.p1fp import P1FPClassifierC, onehot, build_model
 
 
 @pytest.mark.skip
@@ -35,6 +34,7 @@ def test_one_hot_encoding(iris_samples):
         encoder.fit_transform(y_train.reshape(-1, 1)))
 
 
+@pytest.mark.skip
 def test_p1fpclassifierc_classify(iris_samples):
     """Test that it performs classification."""
     x_train, x_test, y_train, y_test = iris_samples
@@ -47,3 +47,10 @@ def test_p1fpclassifierc_classify(iris_samples):
 
     prob_prediction = classifier.predict_proba(x_test)
     assert prob_prediction.shape == (y_test.size, np.unique(y_test).size)
+
+
+def test_build_model():
+    from tensorflow.compat.v1.keras.utils import plot_model
+    plot_model(build_model(5000, 100), to_file="p1fp-model.png",
+               show_shapes=True, show_layer_names=True)
+    # P1FPClassifierC(n_epoch=1).fit(np.zeros((300, 5000)), np.array(list(range(100))*3))

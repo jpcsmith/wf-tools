@@ -21,6 +21,51 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.preprocessing import OneHotEncoder
 
+from tensorflow.compat.v1 import keras, nn
+from tensorflow.compat.v1.keras import layers
+from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
+
+
+def build_cnn_model(n_features: int, n_classes: int):
+    """Build the P1FP(C) model using Keras."""
+    model = keras.Sequential()
+    model.add(layers.Reshape((1, n_features, 1), input_shape=(n_features, ),
+              name="input"))
+
+    model.add(layers.Conv2D(
+        128, 12, activation="relu", kernel_regularizer="l2", padding="same"))
+    model.add(layers.MaxPool2D(10, padding="same"))
+    model.add(layers.Lambda(nn.local_response_normalization))
+
+    model.add(layers.Conv2D(
+        128, 12, activation="relu", kernel_regularizer="l2", padding="same"))
+    model.add(layers.MaxPool2D(10, padding="same"))
+    model.add(layers.Lambda(nn.local_response_normalization))
+
+    # It is flattened for the computation regardless, however tflearn retained
+    # the flattened result whereas keras does not
+    model.add(layers.Flatten())
+    model.add(layers.Dense(256, activation="tanh"))
+    model.add(layers.Dropout(rate=0.2))
+    model.add(layers.Dense(n_classes, activation="softmax", name="target"))
+
+    learning_rate = keras.optimizers.schedules.ExponentialDecay(
+        0.05, decay_steps=1000, decay_rate=0.96)
+    model.compile(
+        optimizer=keras.optimizers.SGD(learning_rate=learning_rate),
+        loss="categorical_crossentropy",
+        metrics=[keras.metrics.TopKCategoricalAccuracy(3)])
+
+    return model
+
+
+class KerasP1FPClassifierC(KerasClassifier):
+    """A wrapper around the Keras implementation of the classifier."""
+    def __init__(self, n_features: int, n_classes: int, **kwargs):
+        super().__init__(
+            build_fn=build_cnn_model, n_features=n_features,
+            n_classes=n_classes, **kwargs)
+
 
 class P1FPClassifierC(BaseEstimator, ClassifierMixin):
     """p1-FP(C) classifier using a convolution neural network.
@@ -67,6 +112,7 @@ class P1FPClassifierC(BaseEstimator, ClassifierMixin):
         self.n_features_ = n_features
         self.classes_ = encoder.categories_[0]
         self.model_ = tflearn.DNN(network, tensorboard_verbose=0)
+
         self.model_.fit({'input': X}, {'target': y}, validation_set=0.1,
                         n_epoch=self.n_epoch, snapshot_step=self.snapshot_step,
                         run_id=name)
