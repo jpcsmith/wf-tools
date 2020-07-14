@@ -10,12 +10,14 @@ The implementation uses code from the original paper, specifically the
 code from 'Model_NoDef.py'.  The original can be found at
 https://github.com/deep-fingerprinting/df
 """
+# pylint: disable=too-many-statements,too-few-public-methods
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers, initializers
 from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
 
 
-def _build(input_shape, classes):
+def build_model(n_features: int, n_classes: int):
+    """Create and return the DeepFingerprinting Model."""
     model = keras.Sequential()
     # Block1
     filter_num = ['None', 32, 64, 128, 256]
@@ -24,15 +26,15 @@ def _build(input_shape, classes):
     pool_stride_size = ['None', 4, 4, 4, 4]
     pool_size = ['None', 8, 8, 8, 8]
 
+    model.add(layers.Reshape((n_features, 1), input_shape=(n_features,)))
     model.add(layers.Conv1D(
         filters=filter_num[1], kernel_size=kernel_size[1],
-        input_shape=input_shape, strides=conv_stride_size[1], padding='same',
-        name='block1_conv1'))
+        strides=conv_stride_size[1], padding='same', name='block1_conv1'))
     model.add(layers.BatchNormalization(axis=-1))
     model.add(layers.ELU(alpha=1.0, name='block1_adv_act1'))
-    model.add(layers.Conv1D(filters=filter_num[1], kernel_size=kernel_size[1],
-                            strides=conv_stride_size[1], padding='same',
-                            name='block1_conv2'))
+    model.add(layers.Conv1D(
+        filters=filter_num[1], kernel_size=kernel_size[1],
+        strides=conv_stride_size[1], padding='same', name='block1_conv2'))
     model.add(layers.BatchNormalization(axis=-1))
     model.add(layers.ELU(alpha=1.0, name='block1_adv_act2'))
     model.add(layers.MaxPooling1D(
@@ -46,9 +48,9 @@ def _build(input_shape, classes):
     model.add(layers.BatchNormalization())
     model.add(layers.Activation('relu', name='block2_act1'))
 
-    model.add(layers.Conv1D(filters=filter_num[2], kernel_size=kernel_size[2],
-                            strides=conv_stride_size[2], padding='same',
-                            name='block2_conv2'))
+    model.add(layers.Conv1D(
+        filters=filter_num[2], kernel_size=kernel_size[2],
+        strides=conv_stride_size[2], padding='same', name='block2_conv2'))
     model.add(layers.BatchNormalization())
     model.add(layers.Activation('relu', name='block2_act2'))
     model.add(layers.MaxPooling1D(
@@ -104,9 +106,14 @@ def _build(input_shape, classes):
     model.add(layers.Dropout(0.5, name='fc2_dropout'))
 
     model.add(layers.Dense(
-        classes, kernel_initializer=initializers.glorot_uniform(seed=0),
+        n_classes, kernel_initializer=initializers.glorot_uniform(seed=0),
         name='fc3'))
     model.add(layers.Activation('softmax', name="softmax"))
+    model.compile(
+        loss="categorical_crossentropy",
+        optimizer=keras.optimizers.Adamax(
+            lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0),
+        metrics=["accuracy"])
 
     return model
 
@@ -114,4 +121,4 @@ def _build(input_shape, classes):
 class DeepFingerprintingClassifier(KerasClassifier):
     """Website fingerprinting classifer using a CNN."""
     def __init__(self, **kwargs):
-        super().__init__(_build, **kwargs)
+        super().__init__(build_fn=build_model, **kwargs)
