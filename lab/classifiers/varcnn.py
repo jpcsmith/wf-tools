@@ -14,18 +14,43 @@ The original can be found at https://github.com/sanjit-bhat/Var-CNN.
 import math
 import time
 import logging
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils import check_array, check_random_state
 from sklearn.utils.validation import check_is_fitted
 from sklearn.preprocessing import OneHotEncoder
-from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.compat.v1 import keras, Variable
+from tensorflow.compat.v1.keras import layers
 import numpy as np
 
 
 PARAMETERS = {'kernel_initializer': 'he_normal'}
+
+
+class Crop(layers.Layer):
+    """Crop the input along axis 1.
+    """
+    def __init__(
+        self,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        **kwargs
+    ):
+        super().__init__(self, **kwargs)
+        assert start is not None or end is not None
+        self.start = start
+        self.end = end
+        # self.start = Variable(initial_value=start, trainable=False)
+        # self.end = Variable(inital_value=end, trainable=False)
+
+    def call(self, inputs):
+        """Run the layer."""
+        return inputs[:, self.start:self.end]
+
+    def get_config(self) -> dict:
+        """Return the configuration."""
+        return {"start": self.start, "end": self.end}
 
 
 # TODO: Allow saving the model for later
@@ -58,28 +83,31 @@ class VarCNNClassifier(BaseEstimator, ClassifierMixin):
         self.random_state = random_state
         self._logger = logging.getLogger(__name__ + "." + self.model_name)
 
-    # def test(self):
-    #     model, _ = self._init_model(101, 5000)
-    #     keras.utils.plot_model(
-    #         model, to_file='model_plot.png', show_shapes=True,
-    #         show_layer_names=True)
-
     def _init_model(self, n_classes: int, n_features: int):
         """Initialise and return the model and callbacks."""
         use_metadata = self.n_meta_features > 0
 
+        n_total_features = n_features + self.n_meta_features
+
         # Constructs dir or time ResNet
         block = dilated_basic_1d if self.dilations else basic_1d
         input_layer = keras.Input(
-            shape=(n_features, 1, ), name=(self.tag + '_input'))
-        output_layer = ResNet18(input_layer, self.tag, block=block)
+            shape=(n_total_features, ), name=(self.tag + '_input'))
+
+        if use_metadata:
+            reshape_layer = Crop(end=-self.n_meta_features)(input_layer)
+        else:
+            reshape_layer = input_layer
+        reshape_layer = layers.Reshape((n_features, 1))(reshape_layer)
+        output_layer = ResNet18(reshape_layer, self.tag, block=block)
 
         # Construct MLP for metadata
         if use_metadata:
-            metadata_input = keras.Input(
-                shape=(self.n_meta_features, ), name='metadata_input')
+            metadata_output = Crop(start=-self.n_meta_features)(input_layer)
+            # metadata_input = keras.Input(
+            #     shape=(self.n_meta_features, ), name='metadata_input')
             # consider this the embedding of all the metadata
-            metadata_output = layers.Dense(32)(metadata_input)
+            metadata_output = layers.Dense(32)(metadata_output)
             metadata_output = layers.BatchNormalization()(
                 metadata_output)
             metadata_output = layers.Activation('relu')(metadata_output)
@@ -90,7 +118,7 @@ class VarCNNClassifier(BaseEstimator, ClassifierMixin):
         combined = concat_params[0]
 
         if use_metadata:
-            input_params.append(metadata_input)
+            # input_params.append(metadata_input)
             concat_params.append(metadata_output)
             combined = layers.Concatenate()(concat_params)
 
@@ -168,15 +196,17 @@ class VarCNNClassifier(BaseEstimator, ClassifierMixin):
         self.model_, callbacks = self._init_model(
             n_classes, (self.n_features_ - self.n_meta_features))
 
-        self._logger.info("Starting training ... ")
-        start_time = time.perf_counter()
-        self.model_.fit(
-            {(self.tag + "_input"): X_traces, "metadata_input": X_meta},
-            {"model_output": y}, validation_split=0.1, epochs=self.epochs,
-            verbose=2, callbacks=callbacks, shuffle=False)
-        self._logger.info(
-            "Training complete in %.2fs", (time.perf_counter() - start_time))
-        return self
+        return self.model_
+
+        # self._logger.info("Starting training ... ")
+        # start_time = time.perf_counter()
+        # self.model_.fit(
+        #     {(self.tag + "_input"): X_traces, "metadata_input": X_meta},
+        #     {"model_output": y}, validation_split=0.1, epochs=self.epochs,
+        #     verbose=2, callbacks=callbacks, shuffle=False)
+        # self._logger.info(
+        #     "Training complete in %.2fs", (time.perf_counter() - start_time))
+        # return self
 
     def predict(self, X):
         """Compute and save final predictions on test set."""
