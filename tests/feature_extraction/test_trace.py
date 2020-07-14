@@ -7,7 +7,7 @@ import numpy as np
 
 from lab.feature_extraction.trace import (
     extract_sizes, extract_interarrival_times, pad_traces,
-    extract_metadata, Metadata, DEFAULT_PACKET_DTYPE, check_traces
+    extract_metadata, Metadata
 )
 
 
@@ -19,9 +19,6 @@ def fixture_sample_traces() -> Tuple[list, np.ndarray, np.ndarray]:
         [(0, 1300), (0.015, 1350), (0.025, 1200), (0, 0)],
         [(0, 1200), (0.02, 1350), (0, 0), (0, 0)],
     ]
-    traces = np.array([np.array(trace, dtype=DEFAULT_PACKET_DTYPE)
-                       for trace in traces])
-
     expected_features = np.array([
         [1350, 1350, -600, 70],
         [1300, 1350, 1200, 0],
@@ -33,22 +30,6 @@ def fixture_sample_traces() -> Tuple[list, np.ndarray, np.ndarray]:
         [0, 0.020, 0.00, 0.00]
     ])
     return traces, expected_features, expected_interarrivals
-
-
-def test_check_traces(sample_traces):
-    """It should always return a structured array."""
-    unstructured_traces = [
-        [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
-        [(0, 1300), (0.015, 1350), (0.025, 1200), (0, 0)],
-        [(0, 1200), (0.02, 1350), (0, 0), (0, 0)],
-    ]
-    traces, *_ = sample_traces
-
-    assert check_traces(unstructured_traces).dtype == DEFAULT_PACKET_DTYPE
-    assert check_traces(unstructured_traces).shape == traces.shape
-    # Should have no effect on an already correct traces
-    assert check_traces(traces).dtype == DEFAULT_PACKET_DTYPE
-    assert check_traces(traces).shape == traces.shape
 
 
 def test_extract_interarrival_times(sample_traces):

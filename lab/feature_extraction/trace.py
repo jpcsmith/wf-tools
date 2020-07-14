@@ -5,9 +5,6 @@ import enum
 import numpy as np
 
 
-DEFAULT_PACKET_DTYPE = np.dtype([("timestamp", "f8"), ("signed_size", "i4")])
-
-
 def extract_sizes(X) -> np.ndarray:
     """Extract the packet sizes from a sequence of padded traces.
 
@@ -19,7 +16,7 @@ def extract_sizes(X) -> np.ndarray:
     """
     X = check_traces(X)
     # Make a copy so that we do not keep the underlying traces alive
-    return X[:, :]["signed_size"].copy()
+    return X[:, :, 1].copy()
 
 
 def pad_traces(X):
@@ -28,12 +25,9 @@ def pad_traces(X):
     max_len = max(len(trace) for trace in X)
     # Use the same dtype as the rows
     sample_trace = np.asarray(X[0])
-    try:
-        shape = (len(X), max_len, sample_trace.shape[1])
-    except IndexError:
-        shape = (len(X), max_len)  # type: ignore
+    n_fields = sample_trace.shape[1]
 
-    result = np.zeros(shape, dtype=sample_trace.dtype)
+    result = np.zeros((len(X), max_len, n_fields), dtype=sample_trace.dtype)
     for i, trace in enumerate(X):
         result[i, :len(trace)] = trace
     return result
@@ -43,7 +37,11 @@ def check_traces(X) -> np.ndarray:
     """Check that the traces have the correct shape and return a numpy
     array.
     """
-    X = np.asarray(X, dtype=DEFAULT_PACKET_DTYPE)
+    X = np.asarray(X)
+    if len(X.shape) != 3:
+        raise ValueError(
+            "A trace sequence should be a 3-dimension array-like. Actual shape "
+            f"is {X.shape}. Ensure it's not jagged.")
     return X
 
 
@@ -59,7 +57,7 @@ def extract_interarrival_times(X) -> np.ndarray:
     X = check_traces(X)
 
     # Make a copy so that we do not keep the underlying traces alive
-    times = X[:, :]["timestamp"].copy()
+    times = X[:, :, 0].copy()
     # Compute the interarrival time
     times[:, 1:] = times[:, 1:] - times[:, :-1]
     # Ensure that the matrix is positive. The computation may cause the last
@@ -106,8 +104,8 @@ def extract_metadata(
     """
     X = check_traces(X)
     # Create views for times and sizes
-    times = X[:, :]["timestamp"]
-    sizes = X[:, :]["signed_size"]
+    times = X[:, :, 0]
+    sizes = X[:, :, 1]
 
     # Include all metadata if unspecified
     metadata = metadata or ~Metadata.UNSPECIFIED
