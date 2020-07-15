@@ -2,35 +2,8 @@
 classification.
 """
 import enum
+from typing import Sequence, Union
 import numpy as np
-
-
-def extract_sizes(X) -> np.ndarray:
-    """Extract the packet sizes from a sequence of padded traces.
-
-    Parameters:
-    -----------
-    X : array-like with shape (n_samples, n_packets, 2)
-        A non-ragged sequence of traces. Use pad_traces first if you
-        have a ragged se
-    """
-    X = check_traces(X)
-    # Make a copy so that we do not keep the underlying traces alive
-    return X[:, :, 1].copy()
-
-
-def pad_traces(X):
-    """Pad a sequence of traces to the length of the longest trace.
-    """
-    max_len = max(len(trace) for trace in X)
-    # Use the same dtype as the rows
-    sample_trace = np.asarray(X[0])
-    n_fields = sample_trace.shape[1]
-
-    result = np.zeros((len(X), max_len, n_fields), dtype=sample_trace.dtype)
-    for i, trace in enumerate(X):
-        result[i, :len(trace)] = trace
-    return result
 
 
 def check_traces(X) -> np.ndarray:
@@ -45,19 +18,40 @@ def check_traces(X) -> np.ndarray:
     return X
 
 
+def ensure_non_ragged(X: Sequence, copy: bool = False) -> np.ndarray:
+    """Pad a sequence to the length of the longest trace feature.
+    Always copy if copy=True.
+    """
+    # Check if it's already non-jagged
+    result = np.array(X, copy=copy)
+    if len(result.shape) == 2:
+        return result
+
+    max_len = max(len(row) for row in X)
+    # Use the same dtype as the rows
+    sample_row = np.asarray(X[0])
+
+    if len(sample_row.shape) != 1:
+        raise ValueError("Input must be at most 2D.")
+
+    result = np.zeros((len(X), max_len), dtype=sample_row.dtype)
+    for i, trace in enumerate(X):
+        result[i, :len(trace)] = trace
+    return result
+
+
 def extract_interarrival_times(X) -> np.ndarray:
-    """Extract the interarrival times from a sequence of padded traces.
+    """Extract the interarrival times from a sequence of potentially
+    ragged timestamps.
 
     Parameters:
     -----------
-    X : array-like with shape (n_samples, n_packets, 2)
-        A non-ragged sequence of traces. Use pad_traces first if you
-        have a ragged se
+    X : array-like with shape (n_samples, n_timestamps)
+        A potentially ragged sequence of timestamps.
     """
-    X = check_traces(X)
+    # Make a copy so that we do not modify the original
+    times = ensure_non_ragged(X, copy=True)
 
-    # Make a copy so that we do not keep the underlying traces alive
-    times = X[:, :, 0].copy()
     # Compute the interarrival time
     times[:, 1:] = times[:, 1:] - times[:, :-1]
     # Ensure that the matrix is positive. The computation may cause the last
@@ -72,78 +66,67 @@ class Metadata(enum.Flag):
     """Supported trace metadata.
     """
     UNSPECIFIED = 0
-
-    PACKET_COUNT = enum.auto()
-    OUTGOING_COUNT = enum.auto()
-    INCOMING_COUNT = enum.auto()
-    INCOMING_RATIO = enum.auto()
-    OUTGOING_RATIO = enum.auto()
-
-    DURATION = enum.auto()
-    DURATION_PER_PACKET = enum.auto()
-
-    TRANSFER_SIZE = enum.auto()
-    OUTGOING_SIZE = enum.auto()
-    INCOMING_SIZE = enum.auto()
-    OUTGOING_SIZE_RATIO = enum.auto()
-    INCOMING_SIZE_RATIO = enum.auto()
-
-    # These have to be placed last, or enum.auto() reassigns values
-    COUNT_METADATA = PACKET_COUNT | OUTGOING_COUNT | INCOMING_COUNT \
-        | OUTGOING_RATIO | INCOMING_RATIO
-    TIME_METADATA = DURATION | DURATION_PER_PACKET
-    SIZE_METADATA = TRANSFER_SIZE | OUTGOING_SIZE | INCOMING_SIZE \
-        | OUTGOING_SIZE_RATIO | INCOMING_SIZE_RATIO
+    # Metadata such as total, incoming, and outgoing packet counts and their
+    # ratios
+    COUNT_METADATA = enum.auto()
+    # Metadata such as duration and duration per packet
+    TIME_METADATA = enum.auto()
+    # Metadta such as total, incoming, outgoing and packet size totals and their
+    # ratios
+    SIZE_METADATA = enum.auto()
 
 
 def extract_metadata(
-    X, metadata: Metadata = Metadata.UNSPECIFIED
+    sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
+    timestamps: Union[Sequence[Sequence], np.ndarray, None] = None,
+    metadata: Metadata = Metadata.UNSPECIFIED
 ) -> np.ndarray:
     """Extract metadata from the traces.  If unspecified, all metadata
     will be returned.
-    """
-    X = check_traces(X)
-    # Create views for times and sizes
-    times = X[:, :, 0]
-    sizes = X[:, :, 1]
 
-    # Include all metadata if unspecified
+    Requires sizes or timestamps depending on the metadata requested.
+    """
+    if (Metadata.TIME_METADATA in metadata) and timestamps is None:
+        raise ValueError("Time features are required for time metadata.")
+    if (Metadata.COUNT_METADATA in metadata) and sizes is None:
+        raise ValueError("Size features are required for packet counts.")
+    if (Metadata.SIZE_METADATA in metadata) and sizes is None:
+        raise ValueError("Size features are required for size metadata.")
+
+    if sizes is not None:
+        sizes = ensure_non_ragged(sizes)
+    if timestamps is not None:
+        timestamps = ensure_non_ragged(timestamps)
+
+    # Unspecified is zero, in which case we set to all
     metadata = metadata or ~Metadata.UNSPECIFIED
 
     results = {}
 
-    results[Metadata.PACKET_COUNT] = np.sum((sizes != 0), axis=1)
-    if Metadata.COUNT_METADATA | metadata:
-        results[Metadata.OUTGOING_COUNT] = np.sum((sizes > 0), axis=1)
-        results[Metadata.INCOMING_COUNT] = np.sum((sizes < 0), axis=1)
-        results[Metadata.OUTGOING_RATIO] = \
-            results[Metadata.OUTGOING_COUNT] / results[Metadata.PACKET_COUNT]
-        results[Metadata.INCOMING_RATIO] = \
-            results[Metadata.INCOMING_COUNT] / results[Metadata.PACKET_COUNT]
+    if Metadata.COUNT_METADATA in metadata:
+        results["packet_count"] = np.sum((sizes != 0), axis=1)
+        results["outgoing_count"] = np.sum((sizes > 0), axis=1)
+        results["incoming_count"] = np.sum((sizes < 0), axis=1)
+        results["outgoing_ratio"] = (
+            results["outgoing_count"] / results["packet_count"])
+        results["incoming_ratio"] = (
+            results["incoming_count"] / results["packet_count"])
 
-    if Metadata.TIME_METADATA | metadata:
-        results[Metadata.DURATION] = np.amax(times, axis=1)
-        results[Metadata.DURATION_PER_PACKET] = \
-            results[Metadata.DURATION] / results[Metadata.PACKET_COUNT]
+    if Metadata.SIZE_METADATA in metadata:
+        results["transfer_size"] = np.sum(np.abs(sizes), axis=1)
+        results["outgoing_size"] = np.sum(
+            np.where(sizes > 0, sizes, 0), axis=1)  # type: ignore
+        results["incoming_size"] = np.sum(
+            np.where(sizes < 0, np.abs(sizes), 0), axis=1)  # type: ignore
+        results["outgoing_size_ratio"] = \
+            results["outgoing_size"] / results["transfer_size"]
+        results["incoming_size_ratio"] = \
+            results["incoming_size"] / results["transfer_size"]
 
-    if Metadata.SIZE_METADATA | metadata:
-        results[Metadata.TRANSFER_SIZE] = np.sum(np.abs(sizes), axis=1)
-        results[Metadata.OUTGOING_SIZE] = np.sum(np.where(sizes > 0, sizes, 0),
-                                                 axis=1)
-        results[Metadata.INCOMING_SIZE] = np.sum(
-            np.where(sizes < 0, np.abs(sizes), 0), axis=1)
-        results[Metadata.OUTGOING_SIZE_RATIO] = \
-            results[Metadata.OUTGOING_SIZE] / results[Metadata.TRANSFER_SIZE]
-        results[Metadata.INCOMING_SIZE_RATIO] = \
-            results[Metadata.INCOMING_SIZE] / results[Metadata.TRANSFER_SIZE]
+    if Metadata.TIME_METADATA in metadata:
+        # Count the number of non-zero times plus the initial zero packet
+        packet_count = np.sum((timestamps > 0), axis=1) + 1
+        results["duration"] = np.amax(timestamps, axis=1)
+        results["duration_per_packet"] = results["duration"] / packet_count
 
-    order = [
-        Metadata.PACKET_COUNT, Metadata.OUTGOING_COUNT, Metadata.INCOMING_COUNT,
-        Metadata.OUTGOING_RATIO, Metadata.INCOMING_RATIO,
-
-        Metadata.DURATION, Metadata.DURATION_PER_PACKET,
-
-        Metadata.TRANSFER_SIZE, Metadata.OUTGOING_SIZE, Metadata.INCOMING_SIZE,
-        Metadata.OUTGOING_SIZE_RATIO, Metadata.INCOMING_SIZE_RATIO,
-    ]
-    return np.transpose(list(results[m] for m in order if m in metadata))
+    return np.transpose(list(results.values()))

@@ -1,132 +1,86 @@
 """Tests for feature extraction."""
 # pylint: disable=invalid-name
-from typing import Tuple
-
 import pytest
 import numpy as np
 
 from lab.feature_extraction.trace import (
-    extract_sizes, extract_interarrival_times, pad_traces,
-    extract_metadata, Metadata
+    extract_interarrival_times, extract_metadata, Metadata, ensure_non_ragged
 )
 
 
-@pytest.fixture(name="sample_traces")
-def fixture_sample_traces() -> Tuple[list, np.ndarray, np.ndarray]:
-    """Returns a simple list of traces."""
-    traces = [
-        [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
-        [(0, 1300), (0.015, 1350), (0.025, 1200), (0, 0)],
-        [(0, 1200), (0.02, 1350), (0, 0), (0, 0)],
+@pytest.fixture(name="sample_data")
+def fixture_sample_data() -> tuple:
+    """Returns a tuple of ragged sizes and interarrival times."""
+    sizes = [[1350, 1350, -600, 70], [1300, 1350, 1200], [1200, 1350]]
+    times = [[0, 0.010, 0.020, 0.03], [0, 0.015, 0.025], [0, 0.020]]
+    return (sizes, times)
+
+
+def test_extract_interarrival_times():
+    """It should extract the interarrival times and pad as necessary.
+    """
+    data = [[0, 0.010, 0.020, 0.03], [0, 0.015, 0.025], [0, 0.020]]
+    expected = [
+        [0, 0.010, 0.01, 0.01], [0, 0.015, 0.01, 0.00], [0, 0.020, 0.00, 0.00]
     ]
-    expected_features = np.array([
-        [1350, 1350, -600, 70],
-        [1300, 1350, 1200, 0],
-        [1200, 1350, 0, 0]
-    ])
-    expected_interarrivals = np.array([
-        [0, 0.010, 0.01, 0.01],
-        [0, 0.015, 0.01, 0.00],
-        [0, 0.020, 0.00, 0.00]
-    ])
-    return traces, expected_features, expected_interarrivals
+    np.testing.assert_allclose(extract_interarrival_times(data), expected)
 
 
-def test_extract_interarrival_times(sample_traces):
-    """It should extract the interarrival times from the traces
-    and pad to the specified dimension.
+def test_ensure_non_ragged():
+    """Ensures that a ragged array is made not ragged.
     """
-    traces, _, expected_times = sample_traces
+    data = [[1350, 1350, -600, 70], [1300, 1350, 1200], [1200, 1350]]
+    expected = np.array([[1350, 1350, -600, 70], [1300, 1350, 1200, 0],
+                         [1200, 1350, 0, 0]])
 
+    result = ensure_non_ragged(data, copy=False)
+    np.testing.assert_array_equal(result, expected)
+    assert not np.shares_memory(result, expected)
+
+    # If already not ragged, it should not be changed
+    result = ensure_non_ragged(expected, copy=False)
+    np.testing.assert_array_equal(result, expected)
+    assert np.shares_memory(result, expected)
+
+    # Should copy when copy=True
+    result = ensure_non_ragged(expected, copy=True)
+    np.testing.assert_array_equal(result, expected)
+    assert not np.shares_memory(result, expected)
+
+
+def test_extract_metadata_time_metadata(sample_data):
+    """It should extract duration metadata from the traces."""
+    _, times = sample_data
     np.testing.assert_allclose(
-        extract_interarrival_times(traces), expected_times)
-
-
-def test_extract_sizes(sample_traces):
-    """It extract the sizes from the traces.
-    """
-    traces, features, *_ = sample_traces
-    np.testing.assert_array_equal(extract_sizes(traces), features)
-
-
-def test_pad_traces():
-    """It should pad the traces to the length of the longest trace."""
-    np.testing.assert_allclose(
-        pad_traces([
-            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
-            [(0, 1300), (0.015, 1350), (0.025, 1200)],
-            [(0, 1200), (0.02, 1350)],
-        ]),
-        np.array([
-            [(0, 1350), (0.01, 1350), (0.02, -600), (0.03, 70)],
-            [(0, 1300), (0.015, 1350), (0.025, 1200), (0.0, 0)],
-            [(0, 1200), (0.02, 1350), (0.0, 0), (0.0, 0)],
+        extract_metadata(timestamps=times, metadata=Metadata.TIME_METADATA),
+        np.transpose([
+            # Duration
+            [0.03, 0.025, 0.02],
+            # Duration per packet
+            [0.03/4, 0.025/3, 0.02/2]
         ]))
 
 
-def test_extract_metadata_duration(sample_traces):
-    """It should extract duration metadata from the traces."""
-    traces, *_ = sample_traces
-    np.testing.assert_allclose(
-        extract_metadata(traces, metadata=Metadata.DURATION),
-        # [[0.03, 0.03/4], [0.025, 0.025/3], [0.02, 0.02/2]])
-        [[0.03], [0.025], [0.02]])
-
-
-def test_extract_metadata_duration_per_packet(sample_traces):
-    """It should extract duration per packet from the traces."""
-    traces, *_ = sample_traces
-    np.testing.assert_allclose(
-        extract_metadata(traces, metadata=Metadata.DURATION_PER_PACKET),
-        [[0.03/4], [0.025/3], [0.02/2]])
-
-
-def test_extract_metadata_packet_count(sample_traces):
-    """It should extract total packet count metadata from the traces."""
-    np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.PACKET_COUNT),
-        [[4], [3], [2]])
-
-
-def test_extract_metadata_outgoing_count(sample_traces):
-    """It should extract outgoing packet count metadata from the traces."""
-    np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.OUTGOING_COUNT),
-        [[3], [3], [2]])
-
-
-def test_extract_metadata_incoming_count(sample_traces):
-    """It should extract incoming packet count metadata from the traces."""
-    np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.INCOMING_COUNT),
-        [[1], [0], [0]])
-
-
-def test_extract_metadata_incoming_ratio(sample_traces):
-    """It should extract incoming packet ratio from the traces."""
-    np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.INCOMING_RATIO),
-        [[1/4], [0/3], [0/2]])
-
-
-def test_extract_metadata_outgoing_ratio(sample_traces):
-    """It should extract outgoing packet ratio from the traces."""
-    np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.OUTGOING_RATIO),
-        [[3/4], [3/3], [2/2]])
-
-
-def test_extract_metadata_count_metadata(sample_traces):
+def test_extract_metadata_count_metadata(sample_data):
     """It should extract all count metadata from the traces."""
+    sizes, _ = sample_data
     np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.COUNT_METADATA),
-        [[4, 3, 1, 3/4, 1/4], [3, 3, 0, 3/3, 0], [2, 2, 0, 2/2, 0]])
+        extract_metadata(sizes=sizes, metadata=Metadata.COUNT_METADATA),
+        np.transpose([
+            # Packet counts
+            [4, 3, 2],
+            # Outgoing and incoming counts
+            [3, 3, 2], [1, 0, 0],
+            # Outgoing and incoming count ratios
+            [3/4, 3/3, 2/2], [1/4, 0, 0]
+        ]))
 
 
-def test_extract_metadata_size_metadata(sample_traces):
+def test_extract_metadata_size_metadata(sample_data):
     """It should extract all size metadata from the traces."""
+    sizes, _ = sample_data
     np.testing.assert_allclose(
-        extract_metadata(sample_traces[0], metadata=Metadata.SIZE_METADATA),
+        extract_metadata(sizes=sizes, metadata=Metadata.SIZE_METADATA),
         np.transpose([
             # Sizes
             [3370, 3850, 2550],
@@ -137,19 +91,31 @@ def test_extract_metadata_size_metadata(sample_traces):
         ]))
 
 
-def test_extract_metadata_unspecified(sample_traces):
+def test_extract_metadata_unspecified(sample_data):
     """It should return all of the metadata if unspecified."""
     n_features = 12
-    assert extract_metadata(sample_traces[0]).shape == (3, n_features)
+    assert extract_metadata(*sample_data).shape == (3, n_features)
 
 
-def test_extract_metadata_subsets(sample_traces):
+def test_extract_metadata_subsets(sample_data):
     """It should return some of the metadata only."""
+    sizes, times = sample_data
     assert extract_metadata(
-        sample_traces[0],
-        metadata=(Metadata.SIZE_METADATA | Metadata.TIME_METADATA)).shape \
-        == (3, 7)
+        sizes, times, metadata=(Metadata.SIZE_METADATA | Metadata.TIME_METADATA)
+    ).shape == (3, 7)
     assert extract_metadata(
-        sample_traces[0],
-        metadata=(Metadata.SIZE_METADATA | Metadata.COUNT_METADATA)).shape \
-        == (3, 10)
+        sizes, times,
+        metadata=(Metadata.SIZE_METADATA | Metadata.COUNT_METADATA)
+    ).shape == (3, 10)
+
+
+def test_extract_metadata_require_sizes_or_timestamps(sample_data):
+    """Test that it raises value error if incorrect features are provided."""
+    sizes, times = sample_data
+
+    with pytest.raises(ValueError):
+        extract_metadata(sizes, metadata=Metadata.TIME_METADATA)
+    with pytest.raises(ValueError):
+        extract_metadata(timestamps=times, metadata=Metadata.COUNT_METADATA)
+    with pytest.raises(ValueError):
+        extract_metadata(timestamps=times, metadata=Metadata.SIZE_METADATA)
