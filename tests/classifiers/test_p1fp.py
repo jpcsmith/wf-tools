@@ -1,44 +1,15 @@
 """Tests for the classifiers of p1-FP."""
 import pytest
-import sklearn
-from sklearn.utils.estimator_checks import parametrize_with_checks
-from sklearn.preprocessing import OneHotEncoder
 import numpy as np
 
-from lab.classifiers.p1fp import P1FPClassifierC, onehot, build_model
+from lab.classifiers.p1fp import P1FPClassifierC, KerasP1FPClassifierC
 
 
-@pytest.mark.skip
-@parametrize_with_checks([P1FPClassifierC])
-def test_sklearn_compatiblity(estimator, check):
-    """Test that the p1-FP(C) classifier is compatible with sklearn."""
-    check(estimator)
-
-
-@pytest.fixture(name="iris_samples")
-def fixture_iris_samples() -> tuple:
-    """Return (X_train, X_test, y_train, y_test) from the iris dataset.
-    """
-    X, y = sklearn.datasets.load_iris(return_X_y=True)
-    return sklearn.model_selection.train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y)
-
-
-def test_one_hot_encoding(iris_samples):
-    """Test the equivalence of the one hot encodings."""
-    _, _, y_train, _ = iris_samples
-
-    encoder = OneHotEncoder(sparse=False)
-    assert np.array_equal(
-        onehot(y_train, n_classes=3),
-        encoder.fit_transform(y_train.reshape(-1, 1)))
-
-
-@pytest.mark.skip
-def test_p1fpclassifierc_classify(iris_samples):
+@pytest.mark.slow
+def test_p1fpclassifierc(train_test_sizes):
     """Test that it performs classification."""
-    x_train, x_test, y_train, y_test = iris_samples
-    classifier = P1FPClassifierC(n_epoch=2)
+    x_train, x_test, y_train, y_test = train_test_sizes
+    classifier = P1FPClassifierC(n_epoch=1)
     classifier.fit(x_train, y_train)
 
     prediction = classifier.predict(x_test)
@@ -49,8 +20,13 @@ def test_p1fpclassifierc_classify(iris_samples):
     assert prob_prediction.shape == (y_test.size, np.unique(y_test).size)
 
 
-def test_build_model():
-    from tensorflow.compat.v1.keras.utils import plot_model
-    plot_model(build_model(5000, 100), to_file="p1fp-model.png",
-               show_shapes=True, show_layer_names=True)
-    # P1FPClassifierC(n_epoch=1).fit(np.zeros((300, 5000)), np.array(list(range(100))*3))
+@pytest.mark.slow
+def test_keras_p1fpclassifierc(train_test_sizes):
+    """Test that it performs classification."""
+    x_train, x_test, y_train, y_test = train_test_sizes
+
+    classifier = KerasP1FPClassifierC(
+        n_features=5000, n_classes=11, epochs=10)
+
+    classifier.fit(x_train, y_train)
+    assert classifier.score(x_test, y_test) > 0.8

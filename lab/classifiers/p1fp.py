@@ -54,7 +54,7 @@ def build_cnn_model(n_features: int, n_classes: int):
     model.compile(
         optimizer=keras.optimizers.SGD(learning_rate=learning_rate),
         loss="categorical_crossentropy",
-        metrics=[keras.metrics.TopKCategoricalAccuracy(3)])
+        metrics=[keras.metrics.TopKCategoricalAccuracy(3), "accuracy"])
 
     return model
 

@@ -149,9 +149,6 @@ class VarCNNClassifier(KerasClassifier):
                     min_lr=1e-5, patience=base_patience, verbose=1),
                 keras.callbacks.EarlyStopping(
                     monitor='val_acc', patience=(2 * base_patience)),
-                keras.callbacks.ModelCheckpoint(
-                    'model_weights.h5', monitor='val_acc', save_best_only=True,
-                    save_weights_only=True, verbose=1)
             ],
             **kwargs)
 
