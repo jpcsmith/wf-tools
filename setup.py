@@ -57,7 +57,7 @@ setup(
     install_requires=DEPENDENCIES,
     extras_require={  # Optional
         'dev': ['flake8', 'pylint', 'mypy'],
-        'test': ['pytest', 'pytest-timeout'],
+        'test': ['pytest', 'pytest-timeout', 'pytest-asyncio'],
         'extras': ['scapy>=2.4.3']
     }
 )
