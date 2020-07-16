@@ -26,26 +26,64 @@ def test_extract_interarrival_times():
     np.testing.assert_allclose(extract_interarrival_times(data), expected)
 
 
-def test_ensure_non_ragged():
+@pytest.fixture(name="ragged_data")
+def fixture_ragged_data() -> tuple:
+    """Returns a tuple of ragged and padded data of with a max length
+    of 4 in axis 1.
+    """
+    ragged = [[1350, 1350, -600, 70], [1300, 1350, 1200], [1200, 1350]]
+    non_ragged = np.array([[1350, 1350, -600, 70], [1300, 1350, 1200, 0],
+                           [1200, 1350, 0, 0]])
+    return ragged, non_ragged
+
+
+def test_ensure_non_ragged(ragged_data):
     """Ensures that a ragged array is made not ragged.
     """
-    data = [[1350, 1350, -600, 70], [1300, 1350, 1200], [1200, 1350]]
-    expected = np.array([[1350, 1350, -600, 70], [1300, 1350, 1200, 0],
-                         [1200, 1350, 0, 0]])
+    data, expected = ragged_data
 
     result = ensure_non_ragged(data, copy=False)
     np.testing.assert_array_equal(result, expected)
     assert not np.shares_memory(result, expected)
 
-    # If already not ragged, it should not be changed
+
+def test_ensure_non_ragged_noop(ragged_data):
+    """If already not ragged, it should not be changed"""
+    _, expected = ragged_data
     result = ensure_non_ragged(expected, copy=False)
     np.testing.assert_array_equal(result, expected)
     assert np.shares_memory(result, expected)
 
-    # Should copy when copy=True
+
+def test_ensure_non_ragged_copy(ragged_data):
+    """Should copy when copy=True"""
+    _, expected = ragged_data
     result = ensure_non_ragged(expected, copy=True)
     np.testing.assert_array_equal(result, expected)
     assert not np.shares_memory(result, expected)
+
+
+def test_ensure_non_ragged_crop(ragged_data):
+    """It should reduce the data to the specified dimension."""
+    data, expected = ragged_data
+    result = ensure_non_ragged(data, dimension=3)
+    np.testing.assert_array_equal(result, expected[:, :3])
+
+
+def test_ensure_non_ragged_pad(ragged_data):
+    """It should reduce the data to the specified dimension."""
+    data, expected = ragged_data
+    result = ensure_non_ragged(data, dimension=6)
+    np.testing.assert_array_equal(result, np.pad(expected, [(0, 0), (0, 2)]))
+
+
+def test_ensure_non_ragged_crop_no_copy(ragged_data):
+    """It should reduce the data to the specified dimension if no copy is
+    necessary.
+    """
+    _, expected = ragged_data
+    result = ensure_non_ragged(expected, dimension=3)
+    np.testing.assert_array_equal(result, expected[:, :3])
 
 
 def test_extract_metadata_time_metadata(sample_data):

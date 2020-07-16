@@ -18,25 +18,37 @@ def check_traces(X) -> np.ndarray:
     return X
 
 
-def ensure_non_ragged(X: Sequence, copy: bool = False) -> np.ndarray:
+def ensure_non_ragged(
+    X: Sequence, dimension: int = 0, copy: bool = False
+) -> np.ndarray:
     """Pad a sequence to the length of the longest trace feature.
-    Always copy if copy=True.
+
+    If dimension is greater than zero, the array resulting ndarray will
+    have shape[1] == dimension, i.e. truncated if too long and padded if
+    too short.
+
+    Will avoid copying if copy=True and dimension is 0.
     """
     # Check if it's already non-jagged
     result = np.array(X, copy=copy)
-    if len(result.shape) == 2:
+    if len(result.shape) == 2 and dimension == 0:
         return result
 
-    max_len = max(len(row) for row in X)
+    dimension = dimension or max(len(row) for row in X)
+
     # Use the same dtype as the rows
     sample_row = np.asarray(X[0])
 
     if len(sample_row.shape) != 1:
         raise ValueError("Input must be at most 2D.")
 
-    result = np.zeros((len(X), max_len), dtype=sample_row.dtype)
+    result = np.zeros((len(X), dimension), dtype=sample_row.dtype)
     for i, trace in enumerate(X):
-        result[i, :len(trace)] = trace
+        # Avoid slicing the list if not necessary
+        if len(trace) <= dimension:
+            result[i, :len(trace)] = trace
+        else:
+            result[i, :] = trace[:dimension]
     return result
 
 
