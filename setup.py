@@ -15,7 +15,6 @@ DEPENDENCIES = [
     'click',
     'mypy-extensions',
     'pandas',
-    'scapy>=2.4.3rc4',
     'selenium==4.0.0a1',
     'typing-extensions',
     'scipy',
@@ -27,8 +26,6 @@ DEPENDENCIES = [
     'aiostream==0.4.1',
     'tflearn',
 ]
-# Other dependencies include
-# - pdflatex
 
 
 setup(
@@ -59,10 +56,6 @@ setup(
     extras_require={  # Optional
         'dev': ['flake8', 'pylint', 'mypy'],
         'test': ['pytest', 'pytest-timeout'],
-        'tensorflow': ['tensorflow==1.14'],
-        'tensorflow-gpu': ['tensorflow-gpu==1.14'],
-    },
-    dependency_links=[
-        "git+https://github.com/secdev/scapy.git@v2.4.3rc4#egg=scapy-2.4.3rc4"
-    ]
+        'extras': ['scapy>=2.4.3']
+    }
 )
