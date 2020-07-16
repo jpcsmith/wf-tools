@@ -25,6 +25,7 @@ DEPENDENCIES = [
     'seaborn',
     'aiostream==0.4.1',
     'tflearn',
+    'h5py',
 ]
 
 
