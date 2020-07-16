@@ -122,3 +122,8 @@ class DeepFingerprintingClassifier(KerasClassifier):
     """Website fingerprinting classifer using a CNN."""
     def __init__(self, **kwargs):
         super().__init__(build_fn=build_model, **kwargs)
+
+    def __repr__(self) -> str:
+        params = self.filter_sk_params(build_model)
+        return "DeepFingerprintingClassifier({})".format(
+            ", ".join(f"{arg}={value!r}" for arg, value in params.items()))
