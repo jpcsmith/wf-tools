@@ -416,6 +416,7 @@ class ProtocolSampler:
         self._sniffer = sniffer
         self._session_factory = session_factory
         self._lock: Optional[asyncio.Lock] = None
+        self._logger = logging.getLogger(__name__)
 
     async def _sample_with_retries(
         self, url: str, protocol: str, immediate: bool = False
@@ -456,8 +457,15 @@ class ProtocolSampler:
                     yield result
             except MaxSamplingAttemptError:
                 if self.attempts_per_protocol:
+                    self._logger.info(
+                        "Stopping collection of %s (%s) as it has "
+                        "failed %d times sequentially.", url, protocol,
+                        self.max_attempts)
                     remaining[protocol] = 0
                 else:
+                    self._logger.info(
+                        "Stopping collection of %s (all protocols) as it has "
+                        "failed %d times sequentially.", url, self.max_attempts)
                     return
             else:
                 remaining[protocol] -= 1
