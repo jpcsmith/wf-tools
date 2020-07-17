@@ -1,4 +1,5 @@
 """Tests for lab.fetch_websites.ChromiumFactory."""
+# pylint: disable=invalid-name
 from unittest import mock
 from unittest.mock import Mock
 
@@ -47,6 +48,16 @@ def test_options_for_quic():
         "--enable-quic",
         "--origin-to-force-quic-on=www.blogspot.com:443",
         "--quic-version=h3-Q050"]
+
+
+def test_options_for_quic_multiple_version():
+    """It should allow any quic version for protocol "QUIC" or "quic"."""
+    assert options_for_quic("https://www.blogspot.com", "quic") == [
+        "--enable-quic",
+        "--origin-to-force-quic-on=www.blogspot.com:443"]
+    assert options_for_quic("https://www.blogspot.com", "QUIC") == [
+        "--enable-quic",
+        "--origin-to-force-quic-on=www.blogspot.com:443"]
 
 
 def test_options_for_tcp():

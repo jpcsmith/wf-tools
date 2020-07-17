@@ -66,12 +66,17 @@ def options_for_quic(url: str, protocol: str) -> List[str]:
     if protocol.lower() == "tcp":
         return ["--disable-quic"]
 
-    version_string = _chromium_quic_version_string(protocol)
     parsed = urllib.parse.urlparse(url, scheme="https")
     assert parsed.port is None
     assert parsed.hostname is not None
-    return ["--enable-quic", f"--origin-to-force-quic-on={parsed.hostname}:443",
-            f"--quic-version={version_string}"]
+
+    options = [
+        "--enable-quic", f"--origin-to-force-quic-on={parsed.hostname}:443"
+     ]
+    if protocol.lower() != "quic":
+        version_string = _chromium_quic_version_string(protocol)
+        options += [f"--quic-version={version_string}"]
+    return options
 
 
 class WebDriverFactory(abc.ABC):
