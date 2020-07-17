@@ -145,10 +145,10 @@ class VarCNNClassifier(KerasClassifier):
             tag=tag,
             callbacks=[
                 keras.callbacks.ReduceLROnPlateau(
-                    monitor='val_acc', factor=np.sqrt(0.1), cooldown=0,
+                    monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
                     min_lr=1e-5, patience=base_patience, verbose=1),
                 keras.callbacks.EarlyStopping(
-                    monitor='val_acc', patience=(2 * base_patience)),
+                    monitor='val_accuracy', patience=(2 * base_patience)),
             ],
             **kwargs)
 
