@@ -1,4 +1,5 @@
 """Tests for lab.fetch_websites.ProtocolSampler"""
+# pylint: disable=invalid-name
 import asyncio
 from unittest import mock
 from unittest.mock import sentinel
@@ -103,6 +104,37 @@ async def test_sample_url_max_attempts(mocker):
     assert mock_collect_trace.call_args_list == [
         mock.call('https://pie.ch', proto, sentinel.sniffer, sentinel.factory)
         for proto in ['Q043', 'tcp', 'tcp'] + ['Q046']*2 + ['tcp']*2]
+
+
+@pytest.mark.asyncio
+async def test_sample_url_max_attempts_per_protocol(mocker):
+    """It should observe the max attempts, for sequential failures of a
+    individual protocols.
+    """
+    statuses = {'quic': 'failure', 'tcp': 'success', 'Q043': 'failure',
+                'Q046': 'success'}
+
+    def _fail_single_protocols(_, protocol, *_args, **_kwargs):
+        return {'protocol': protocol, 'status': statuses[protocol]}
+
+    mock_collect_trace = mocker.patch(
+        'lab.fetch_websites.collect_trace', autospec=True)
+    mock_collect_trace.side_effect = _fail_single_protocols
+
+    results = ProtocolSampler(
+        sniffer=sentinel.sniffer, session_factory=sentinel.factory,
+        max_attempts=2, attempts_per_protocol=True,
+    ).sample_url('https://pie.ch', {'tcp': 3, 'Q043': 3, 'Q046': 3, 'quic': 3})
+    traces = [result async for result in results]
+
+    assert traces == [
+        {'protocol': proto, 'status': status} for proto, status in [
+            ('tcp', 'success'), ('Q043', 'failure'), ('Q043', 'failure'),
+            ('Q046', 'success'), ('quic', 'failure'), ('quic', 'failure'),
+            ('tcp', 'success'), ('Q046', 'success'), ('tcp', 'success'),
+            ('Q046', 'success')
+        ]
+    ]
 
 
 @pytest.mark.asyncio

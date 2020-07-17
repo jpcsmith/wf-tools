@@ -396,17 +396,22 @@ class ProtocolSampler:
     max_attempts :
         Allow up to max_attempts sequential failures when collecting a
         URL before giving up.
+    attempts_per_protocol :
+        After max_attempts failures on a protocol, drop that protocol
+        but continue to other protocols.
     delay :
         Wait delay seconds between each successive attempt for a given
         URL.  A delay of 0 means do not wait.
     """
     def __init__(
         self, sniffer: PacketSniffer, session_factory: SessionFactory,
-        max_attempts: int = 3, delay: float = 0
+        max_attempts: int = 3, attempts_per_protocol: bool = False,
+        delay: float = 0
     ):
         assert delay >= 0
         assert max_attempts > 0
         self.max_attempts: Final = max_attempts
+        self.attempts_per_protocol = attempts_per_protocol
         self.delay: Final = delay
         self._sniffer = sniffer
         self._session_factory = session_factory
@@ -426,9 +431,6 @@ class ProtocolSampler:
             result = await self.collect_trace(url, protocol)
             status = result["status"]
             yield result
-            # Attempt some explicit cleanup
-            result.clear()  # type: ignore
-            del result
 
             if status == 'success':
                 return
@@ -453,7 +455,10 @@ class ProtocolSampler:
                 async for result in coroutine:
                     yield result
             except MaxSamplingAttemptError:
-                return
+                if self.attempts_per_protocol:
+                    remaining[protocol] = 0
+                else:
+                    return
             else:
                 remaining[protocol] -= 1
 
