@@ -98,6 +98,9 @@ def extract_metadata(
 
     Requires sizes or timestamps depending on the metadata requested.
     """
+    # Unspecified is zero, in which case we set to all
+    metadata = metadata or ~Metadata.UNSPECIFIED
+
     if (Metadata.TIME_METADATA in metadata) and timestamps is None:
         raise ValueError("Time features are required for time metadata.")
     if (Metadata.COUNT_METADATA in metadata) and sizes is None:
@@ -109,9 +112,6 @@ def extract_metadata(
         sizes = ensure_non_ragged(sizes)
     if timestamps is not None:
         timestamps = ensure_non_ragged(timestamps)
-
-    # Unspecified is zero, in which case we set to all
-    metadata = metadata or ~Metadata.UNSPECIFIED
 
     results = {}
 
