@@ -28,7 +28,8 @@ else:
 
 from tensorflow.compat.v1 import keras, nn
 from tensorflow.compat.v1.keras import layers
-from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
+
+from lab.classifiers.wrappers import ModifiedKerasClassifier
 
 
 def build_cnn_model(n_features: int, n_classes: int):
@@ -64,12 +65,13 @@ def build_cnn_model(n_features: int, n_classes: int):
     return model
 
 
-class KerasP1FPClassifierC(KerasClassifier):
-    """A wrapper around the Keras implementation of the classifier."""
-    def __init__(self, n_features: int, n_classes: int, **kwargs):
-        super().__init__(
-            build_fn=build_cnn_model, n_features=n_features,
-            n_classes=n_classes, **kwargs)
+class KerasP1FPClassifierC(ModifiedKerasClassifier):
+    """A wrapper around the Keras implementation of the classifier.
+
+    See p1fp.build_cnn_model for parameter details.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(build_fn=build_cnn_model, **kwargs)
 
 
 if USE_TFLEARN:
