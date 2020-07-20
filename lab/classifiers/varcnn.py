@@ -18,8 +18,8 @@ from typing import Optional
 import numpy as np
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers
-from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
-from tensorflow.python.keras.utils.np_utils import to_categorical
+
+from lab.classifiers.wrappers import ModifiedKerasClassifier
 
 
 PARAMETERS = {'kernel_initializer': 'he_normal'}
@@ -124,7 +124,7 @@ def build_model(
 
 
 # TODO: Allow saving the model for later
-class VarCNNClassifier(KerasClassifier):
+class VarCNNClassifier(ModifiedKerasClassifier):
     """Var-CNN classifier using a CNN with either timing or direction
     based features.
 
@@ -161,24 +161,6 @@ class VarCNNClassifier(KerasClassifier):
             # first column is probability of class 0 and second is of class 1
             probs = np.hstack([1 - probs, probs])
         return probs
-
-    def fit(self, x, y, **kwargs):
-        """Fit the model."""
-        # Reshape the validation set args in a similar fashion to how y will be
-        # reshaped. Only necessary because varcnn uses categorical cross entropy
-        if "validation_data" in kwargs:
-            val_x, val_y = kwargs["validation_data"]
-            if len(val_y.shape) == 1:
-                # Encode the the validation y using the classes from the
-                # training set
-                classes_ = np.unique(y)
-                val_y = np.searchsorted(classes_, val_y)
-                # Make it categorical
-                val_y = to_categorical(val_y)
-
-                kwargs["validation_data"] = (val_x, val_y)
-
-        super().fit(x, y, **kwargs)
 
 
 # Code for standard ResNet model is based on

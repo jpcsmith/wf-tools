@@ -13,7 +13,8 @@ https://github.com/deep-fingerprinting/df
 # pylint: disable=too-many-statements,too-few-public-methods
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers, initializers
-from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
+
+from lab.classifiers.wrappers import ModifiedKerasClassifier
 
 
 def build_model(n_features: int, n_classes: int):
@@ -118,7 +119,7 @@ def build_model(n_features: int, n_classes: int):
     return model
 
 
-class DeepFingerprintingClassifier(KerasClassifier):
+class DeepFingerprintingClassifier(ModifiedKerasClassifier):
     """Website fingerprinting classifer using a CNN."""
     def __init__(self, **kwargs):
         super().__init__(build_fn=build_model, **kwargs)
