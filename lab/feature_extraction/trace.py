@@ -52,7 +52,7 @@ def ensure_non_ragged(
     return result
 
 
-def extract_interarrival_times(X) -> np.ndarray:
+def extract_interarrival_times(X, dimension: int = 0) -> np.ndarray:
     """Extract the interarrival times from a sequence of potentially
     ragged timestamps.
 
@@ -62,7 +62,7 @@ def extract_interarrival_times(X) -> np.ndarray:
         A potentially ragged sequence of timestamps.
     """
     # Make a copy so that we do not modify the original
-    times = ensure_non_ragged(X, copy=True)
+    times = ensure_non_ragged(X, dimension=dimension, copy=True)
 
     # Compute the interarrival time
     times[:, 1:] = times[:, 1:] - times[:, :-1]
