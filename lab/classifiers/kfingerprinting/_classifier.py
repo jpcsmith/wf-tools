@@ -8,7 +8,7 @@ The original can be found at https://github.com/jhayes14/k-FP.
 """
 import logging
 import warnings
-from typing import Optional, Iterable, TypeVar, Union
+from typing import Optional, TypeVar, Union
 
 import numpy as np
 import sklearn
@@ -19,16 +19,6 @@ from sklearn.utils import check_array
 from sklearn.utils.multiclass import unique_labels
 
 Element = TypeVar('Element')
-
-
-def _unique_element(items: Iterable[Element]) -> Optional[Element]:
-    """If all the elements in the iterable are the same, it is returned,
-    otherwise returns None.
-    """
-    items = set(items)
-    if len(items) == 1:
-        return items.pop()
-    return None
 
 
 class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
@@ -115,12 +105,7 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         logger.debug("Model fitting complete.")
         return self
 
-    def predict(self, X, n_neighbors: Optional[int] = None):
-        """Predict the class for X.
-
-        The predicted class is the unanimous label of the k-closest neighbours
-        or None.
-        """
+    def _predict(self, X, n_neighbors: Optional[int] = None):
         sklearn.utils.validation.check_is_fitted(
             self, ['graph_', 'labels_', 'forest_'])
 
@@ -133,12 +118,20 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         neighbourhoods = self.graph_.kneighbors(
             leaves, return_distance=False, n_neighbors=n_neighbors)
 
+        return (self.labels_[neighbourhoods.reshape((-1, ))]
+                .reshape((-1, n_neighbors or self.n_neighbours)))
+
+    def predict(self, X, n_neighbors: Optional[int] = None):
+        """Predict the class for X.
+
+        The predicted class is the unanimous label of the k-closest neighbours
+        or None.
+        """
+        neighbourhoods = self._predict(X, n_neighbors)
+
+        logger = logging.getLogger(__name__)
         logger.debug("Formulating decision.")
-        result = []
-        for neighbours_list in neighbourhoods:
-            labels = [self.labels_[index] for index in neighbours_list]
-            prediction = _unique_element(labels)
-            # Explicitly check for None since 0/False are valid predictions
-            result.append(prediction if prediction is not None
-                          else self.unknown_label)
-        return np.array(result)
+
+        first_column = neighbourhoods[:, 0].reshape((-1, 1))
+        all_match = np.all(neighbourhoods == first_column, axis=1)
+        return np.where(all_match, neighbourhoods[:, 0], self.unknown_label)
