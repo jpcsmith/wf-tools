@@ -141,11 +141,11 @@ class VarCNNClassifier(KerasClassifier):
             ],
             **kwargs)
 
-    # Code taken from KerasClassifier and Sequential, as Models do not support
-    # predict_proba
     def predict_proba(self, x, **kwargs):
         """Returns class probability estimates for the given test data.
         """
+        # Code taken from KerasClassifier and Sequential, as Models do not
+        # support predict_proba
         kwargs = self.filter_sk_params(keras.Model.predict, kwargs)
         probs = self.model.predict(x, **kwargs)
 
@@ -160,6 +160,25 @@ class VarCNNClassifier(KerasClassifier):
             # first column is probability of class 0 and second is of class 1
             probs = np.hstack([1 - probs, probs])
         return probs
+
+    def fit(self, x, y, **kwargs):
+        """Fit the model."""
+        # Reshape the validation set args in a similar fashion to how y will be
+        # reshaped. Only necessary because varcnn uses categorical cross entropy
+        breakpoint()
+        if "validation_set" in kwargs:
+            val_x, val_y = kwargs["validation_set"]
+            if len(val_y.shape) == 1:
+                # Encode the the validation y using the classes from the
+                # training set
+                classes_ = np.unique(y)
+                val_y = np.searchsorted(classes_, val_y)
+                # Make it categorical
+                val_y = keras.utils.np_utils.to_categorical(val_y)
+
+                kwargs["validation_set"] = (val_x, val_y)
+
+        super().fit(x, y, **kwargs)
 
 
 # Code for standard ResNet model is based on
