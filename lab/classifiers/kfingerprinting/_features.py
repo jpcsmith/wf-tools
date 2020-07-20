@@ -27,11 +27,22 @@ def split_in_out(list_data: Trace, check: bool = True) -> Tuple[Trace, Trace]:
     Raise AssertionError if check is true and the trace has no incoming or no
     outgoing packets.
     """
-    incoming = [pkt for pkt in list_data if pkt.direction == Direction.IN]
-    outgoing = [pkt for pkt in list_data if pkt.direction == Direction.OUT]
+    # Use a fast-path for np record arrays
+    if isinstance(list_data, np.recarray):
+        incoming = list_data[list_data["direction"] < 0]
+        outgoing = list_data[list_data["direction"] > 0]
+    else:
+        incoming = [pkt for pkt in list_data if pkt.direction == Direction.IN]
+        outgoing = [pkt for pkt in list_data if pkt.direction == Direction.OUT]
     if check:
-        assert incoming and outgoing
+        assert len(incoming) > 0 and len(outgoing) > 0
     return (incoming, outgoing)
+
+
+def _get_timestamps(array_like) -> np.ndarray:
+    if isinstance(array_like, np.recarray):
+        return array_like["timestamp"]
+    return np.array([x[0] for x in array_like])
 
 
 # -------------
@@ -40,11 +51,9 @@ def split_in_out(list_data: Trace, check: bool = True) -> Tuple[Trace, Trace]:
 def _inter_pkt_time(list_data):
     if len(list_data) == 1:
         return [0.0, ]
-    times = [x[0] for x in list_data]
-    temp = []
-    for elem, next_elem in zip(times, times[1:]+[times[0]]):
-        temp.append(next_elem-elem)
-    return temp[:-1]
+
+    times = _get_timestamps(list_data)
+    return (np.concatenate((times[1:], [times[0]])) - times)[:-1]
 
 
 def interarrival_times(list_data):
@@ -66,10 +75,10 @@ def _prefix_keys(mapping: dict, prefix: Union[str, Sequence[str]]) -> dict:
 
 def _interarrival_stats(times: Sequence[float]) -> dict:
     return {
-        'mean': np.mean(times) if times else 0,
+        'mean': np.mean(times) if len(times) > 0 else 0,
         'max': max(times, default=0),
-        'std': np.std(times) if times else 0,
-        'percentile-75': np.percentile(times, 75) if times else 0
+        'std': np.std(times) if len(times) > 0 else 0,
+        'percentile-75': np.percentile(times, 75) if len(times) > 0 else 0
     }
 
 
@@ -91,8 +100,9 @@ def time_percentiles(overall: Trace) -> dict:
     incoming, outgoing = split_in_out(overall)
 
     def _percentiles(trace):
-        times = [pkt[0] for pkt in trace]
-        return {f'percentile-{p}': (np.percentile(times, p) if times else 0)
+        times = _get_timestamps(trace)
+        return {f'percentile-{p}': (np.percentile(times, p)
+                                    if len(times) > 0 else 0)
                 for p in [25, 50, 75, 100]}
 
     return {
@@ -186,8 +196,8 @@ def packets_per_second_stats(overall: Trace) \
     second, as well as the number of packets each second.
     """
     n_seconds = math.ceil(overall[-1].timestamp)
-    packets_per_sec, _ = np.histogram([pkt.timestamp for pkt in overall],
-                                      bins=n_seconds, range=(0, n_seconds))
+    packets_per_sec, _ = np.histogram(
+        _get_timestamps(overall), bins=n_seconds, range=(0, n_seconds))
     packets_per_sec = list(packets_per_sec)
 
     return {
@@ -203,10 +213,14 @@ def packet_ordering_stats(overall: Trace) -> dict:
     """Mean and std of a variant of the packet ordering features."""
     # Note that the ordering here is different from the k-fingerprinting
     # reference implementation. They have out and in swapped.
-    in_preceeding = [i for i, pkt in enumerate(overall)
-                     if pkt.direction == Direction.IN]
-    out_preceeding = [i for i, pkt in enumerate(overall)
-                      if pkt.direction == Direction.OUT]
+    if isinstance(overall, np.recarray):
+        in_preceeding = np.nonzero(overall["direction"] < 0)[0]
+        out_preceeding = np.nonzero(overall["direction"] > 0)[0]
+    else:
+        in_preceeding = [i for i, pkt in enumerate(overall)
+                         if pkt.direction == Direction.IN]
+        out_preceeding = [i for i, pkt in enumerate(overall)
+                          if pkt.direction == Direction.OUT]
 
     return {
         'packet-order::out::mean': np.mean(out_preceeding),
@@ -229,6 +243,11 @@ def in_out_fraction(overall: Trace) -> dict:
 # -------------
 # SIZE FEATURES
 # -------------
+def _get_sizes(array_like):
+    if isinstance(array_like, np.recarray):
+        return array_like["size"]
+    return [x[0] for x in array_like]
+
 
 def total_packet_sizes(overall: Trace) -> dict:
     """Return the total incoming, outgoing and overall packet sizes."""
@@ -236,8 +255,8 @@ def total_packet_sizes(overall: Trace) -> dict:
 
     # Use absolute value in case the input sizes are signed
     result = {
-        'total-size::in': sum(abs(pkt.size) for pkt in incoming),
-        'total-size::out': sum(abs(pkt.size) for pkt in outgoing),
+        'total-size::in': np.sum(np.abs(_get_sizes(incoming))),
+        'total-size::out': np.sum(np.abs(_get_sizes(outgoing))),
     }
     result['total-size::overall'] = result['total-size::in'] \
         + result['total-size::out']
@@ -245,7 +264,7 @@ def total_packet_sizes(overall: Trace) -> dict:
 
 
 def _packet_size_stats(trace: Trace) -> dict:
-    sizes = [pkt.size for pkt in trace]
+    sizes = _get_sizes(trace)
     return {
         'mean': np.mean(sizes), 'var': np.var(sizes),
         'std': np.std(sizes), 'max': np.max(sizes)
