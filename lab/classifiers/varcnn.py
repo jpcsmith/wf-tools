@@ -116,7 +116,7 @@ def build_model(
 
     model = keras.Model(inputs=input_layer, outputs=model_output)
     model.compile(
-        loss='categorical_crossentropy', metrics=['accuracy', 'val_accuracy'],
+        loss='categorical_crossentropy', metrics=['accuracy'],
         optimizer=keras.optimizers.Adam(0.001))
 
     return model
