@@ -12,6 +12,7 @@ The original can be found at https://github.com/sanjit-bhat/Var-CNN.
 """
 # pylint: disable=too-many-arguments,invalid-name,too-many-instance-attributes
 # pylint: disable=too-few-public-methods
+import logging
 from typing import Optional
 
 import numpy as np
@@ -114,8 +115,9 @@ def build_model(
                                 name='model_output')(combined)
 
     model = keras.Model(inputs=input_layer, outputs=model_output)
-    model.compile(loss='categorical_crossentropy', metrics=['accuracy'],
-                  optimizer=keras.optimizers.Adam(0.001))
+    model.compile(
+        loss='categorical_crossentropy', metrics=['accuracy', 'val_accuracy'],
+        optimizer=keras.optimizers.Adam(0.001))
 
     return model
 
@@ -124,25 +126,12 @@ def build_model(
 class VarCNNClassifier(KerasClassifier):
     """Var-CNN classifier using a CNN with either timing or direction
     based features.
+
+    See `varcnn.build_model` for other arguments.
     """
-    def __init__(
-        self,
-        n_classes: int,
-        n_packet_features: int,
-        n_meta_features: int = 7,
-        dilations: bool = True,
-        tag: str = "varcnn",
-        base_patience: int = 5,
-        **kwargs
-    ):
-        assert n_meta_features >= 0
+    def __init__(self, base_patience: int = 5, **kwargs):
         super().__init__(
             build_fn=build_model,
-            n_classes=n_classes,
-            n_packet_features=n_packet_features,
-            n_meta_features=n_meta_features,
-            dilations=dilations,
-            tag=tag,
             callbacks=[
                 keras.callbacks.ReduceLROnPlateau(
                     monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
@@ -151,6 +140,26 @@ class VarCNNClassifier(KerasClassifier):
                     monitor='val_accuracy', patience=(2 * base_patience)),
             ],
             **kwargs)
+
+    # Code taken from KerasClassifier and Sequential, as Models do not support
+    # predict_proba
+    def predict_proba(self, x, **kwargs):
+        """Returns class probability estimates for the given test data.
+        """
+        kwargs = self.filter_sk_params(keras.Model.predict, kwargs)
+        probs = self.model.predict(x, **kwargs)
+
+        if probs.min() < 0. or probs.max() > 1.:
+            logging.warning('Network returning invalid probability values. '
+                            'The last layer might not normalize predictions '
+                            'into probabilities '
+                            '(like softmax or sigmoid would).')
+
+        # check if binary classification
+        if probs.shape[1] == 1:
+            # first column is probability of class 0 and second is of class 1
+            probs = np.hstack([1 - probs, probs])
+        return probs
 
 
 # Code for standard ResNet model is based on
