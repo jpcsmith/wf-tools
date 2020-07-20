@@ -165,7 +165,7 @@ class VarCNNClassifier(KerasClassifier):
         """Fit the model."""
         # Reshape the validation set args in a similar fashion to how y will be
         # reshaped. Only necessary because varcnn uses categorical cross entropy
-        if "validation_set" in kwargs:
+        if "validation_data" in kwargs:
             val_x, val_y = kwargs["validation_data"]
             if len(val_y.shape) == 1:
                 # Encode the the validation y using the classes from the
