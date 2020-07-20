@@ -165,9 +165,8 @@ class VarCNNClassifier(KerasClassifier):
         """Fit the model."""
         # Reshape the validation set args in a similar fashion to how y will be
         # reshaped. Only necessary because varcnn uses categorical cross entropy
-        breakpoint()
         if "validation_set" in kwargs:
-            val_x, val_y = kwargs["validation_set"]
+            val_x, val_y = kwargs["validation_data"]
             if len(val_y.shape) == 1:
                 # Encode the the validation y using the classes from the
                 # training set
@@ -176,7 +175,7 @@ class VarCNNClassifier(KerasClassifier):
                 # Make it categorical
                 val_y = keras.utils.np_utils.to_categorical(val_y)
 
-                kwargs["validation_set"] = (val_x, val_y)
+                kwargs["validation_data"] = (val_x, val_y)
 
         super().fit(x, y, **kwargs)
 
