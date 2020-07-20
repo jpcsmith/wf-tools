@@ -15,7 +15,7 @@ def fixture_train_test_data(request, dataset) -> tuple:
     closed-world setting.
     """
     sizes, times, classes = dataset
-    assert len(np.unique(classes)) == 11
+    assert len(np.unique(classes)) == 3
 
     if request.param == "sizes":
         main_features = ensure_non_ragged(sizes)[:, :5000]
@@ -43,7 +43,7 @@ def test_varcnn_size(train_test_data):
     x_train, x_test, y_train, y_test = train_test_data
 
     classifier = VarCNNClassifier(
-        n_classes=11, n_packet_features=5000, n_meta_features=12,
+        n_classes=3, n_packet_features=5000, n_meta_features=12,
         epochs=20)
-    classifier.fit(x_train, y_train, validation_split=0.2)
+    classifier.fit(x_train, y_train, validation_split=0.1)
     assert classifier.score(x_test, y_test) > 0.8
