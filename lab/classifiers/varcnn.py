@@ -19,6 +19,7 @@ import numpy as np
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers
 from tensorflow.compat.v1.keras.wrappers.scikit_learn import KerasClassifier
+from tensorflow.python.keras.utils.np_utils import to_categorical
 
 
 PARAMETERS = {'kernel_initializer': 'he_normal'}
@@ -173,7 +174,7 @@ class VarCNNClassifier(KerasClassifier):
                 classes_ = np.unique(y)
                 val_y = np.searchsorted(classes_, val_y)
                 # Make it categorical
-                val_y = keras.utils.np_utils.to_categorical(val_y)
+                val_y = to_categorical(val_y)
 
                 kwargs["validation_data"] = (val_x, val_y)
 
