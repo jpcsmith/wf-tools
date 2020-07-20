@@ -122,11 +122,19 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
                 .reshape((-1, n_neighbors or self.n_neighbours)))
 
     def predict(self, X, n_neighbors: Optional[int] = None):
+        """Predict the class for X by taking the class with the highest
+        frequency in the in the neighbours of each sample.
+        """
+        probabilities = self.predict_proba(X, n_neighbors)
+        return self.classes_[np.argmax(probabilities, axis=1)]
+
+    def predict_unanimous(self, X, n_neighbors: Optional[int] = None):
         """Predict the class for X.
 
         The predicted class is the unanimous label of the k-closest neighbours
         or None.
         """
+        X = check_array(X, accept_sparse=False, dtype=None)
         neighbourhoods = self._predict(X, n_neighbors)
 
         logger = logging.getLogger(__name__)
@@ -135,3 +143,20 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         first_column = neighbourhoods[:, 0].reshape((-1, 1))
         all_match = np.all(neighbourhoods == first_column, axis=1)
         return np.where(all_match, neighbourhoods[:, 0], self.unknown_label)
+
+    def predict_proba(self, X, n_neighbors: Optional[int] = None):
+        """Predict the probability for each class, sorted by the class
+        labels.
+
+        For the probability of a class we use the number of times that
+        class appears in the the neighbourhood, divided by the the number
+        of neighbours.
+        """
+        X = check_array(X, accept_sparse=False, dtype=None)
+        neighbourhoods = self._predict(X, n_neighbors)
+        n_neighbors = neighbourhoods.shape[1]
+
+        result = np.zeros((len(X), len(self.classes_)), dtype=float)
+        for i, class_ in enumerate(self.classes_):
+            result[:, i] = np.sum(neighbourhoods == class_, axis=1)
+        return result / n_neighbors
