@@ -138,7 +138,8 @@ class VarCNNClassifier(ModifiedKerasClassifier):
                     monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
                     min_lr=1e-5, patience=base_patience, verbose=1),
                 keras.callbacks.EarlyStopping(
-                    monitor='val_accuracy', patience=(2 * base_patience)),
+                    monitor='val_accuracy', patience=(2 * base_patience),
+                    restore_best_weights=True),
             ],
             **kwargs)
 
