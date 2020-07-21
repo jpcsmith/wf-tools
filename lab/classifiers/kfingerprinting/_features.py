@@ -9,7 +9,7 @@ original can be found at https://github.com/jhayes14/k-FP.
 """
 import math
 import itertools
-from typing import Tuple, Union, Sequence
+from typing import Tuple, Union, Sequence, Optional
 
 import numpy as np
 
@@ -246,7 +246,7 @@ def in_out_fraction(overall: Trace) -> dict:
 def _get_sizes(array_like):
     if isinstance(array_like, np.recarray):
         return array_like["size"]
-    return [x[0] for x in array_like]
+    return [x[2] for x in array_like]
 
 
 def total_packet_sizes(overall: Trace) -> dict:
@@ -286,15 +286,49 @@ def packet_size_stats(overall: Trace) -> dict:
 # ----------------
 # FEATURE FUNCTION
 # ----------------
-def extract_features(trace: Trace, max_size: int = DEFAULT_NUM_FEATURES) \
-        -> Tuple[float, ...]:
+def make_trace_array(
+    timestamps: Sequence[float], sizes: Sequence[float]
+) -> np.ndarray:
+    """Create a trace-like array from the sequence of timestamps and
+    signed sizes.
+    """
+    assert len(timestamps) == len(sizes)
+
+    trace_array = np.recarray((len(timestamps), ), dtype=[
+        # Use i8 for sizes since we may be doing operations which overflow
+        ("timestamp", "f8"), ("direction", "i1"), ("size", "i8")
+    ])
+    trace_array["timestamp"] = timestamps
+
+    sizes = np.asarray(sizes, dtype=int)
+    np.sign(sizes, out=trace_array["direction"])
+    np.abs(sizes, out=trace_array["size"])
+    return trace_array
+
+
+def extract_features(
+    trace: Trace = None, max_size: int = DEFAULT_NUM_FEATURES,
+    timestamps: Optional[Sequence[float]] = None,
+    sizes: Optional[Sequence[float]] = None
+) -> Tuple[float, ...]:
     """Return a tuple of features of the specified size, according to the paper
 
         Hayes, Jamie, and George Danezis. "k-fingerprinting: A robust
         scalable website fingerprinting technique." 25th {USENIX} Security
         Symposium ({USENIX} Security 16). 2016.
 
+    Either trace or both sizes and timestamps must be specified.
     """
+    if trace is None and (timestamps is None or sizes is None):
+        raise ValueError("timestamps and sizes must be specified when trace is "
+                         "None.")
+    if trace is not None and (timestamps is not None or sizes is not None):
+        raise ValueError("Either trace or both sizes and timestamps should be "
+                         "specified.")
+    if trace is None:
+        assert timestamps is not None and sizes is not None
+        trace = make_trace_array(timestamps=timestamps, sizes=sizes)
+
     assert trace[0].timestamp == 0
 
     all_features = {}
