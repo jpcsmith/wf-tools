@@ -19,11 +19,11 @@ def test_sklearn_compatiblity(estimator, check):
 
 
 @pytest.fixture(name="train_test_data")
-def fixture_train_test_data(dataset_2) -> tuple:
+def fixture_train_test_data(dataset) -> tuple:
     """Return a tuple of (x_train, x_test, y_train, y_test) in the
     open-world setting.
     """
-    sizes, times, classes = dataset_2
+    sizes, times, classes = dataset
     features = np.ndarray((len(sizes), 165), dtype=float)
 
     for i, (size_row, times_row) in enumerate(zip(sizes, times)):
