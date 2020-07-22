@@ -71,11 +71,12 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
         y = check_array(y, accept_sparse=False, ensure_2d=False, dtype=None)
 
         # Check that the unknown label is compatible with the other labels
-        if y.dtype != np.dtype(type(self.unknown_label)):
-            warnings.warn(("The datatype of the labels ({}) does not match the "
-                           "datatype of the unknown label ({}). A conversion "
-                           "or error may occur.").format(
-                               y.dtype, np.dtype(type(self.unknown_label))))
+        if not np.can_cast(self.unknown_label, y.dtype):
+            unknown_label_type = np.dtype(type(self.unknown_label))
+            warnings.warn(
+                f"The datatype of the unknown label ({unknown_label_type}) "
+                f"does not match the datatype of the classes ({y.dtype}). A "
+                "conversion or error may occur.")
 
         logger = logging.getLogger(__name__)
         logger.debug("Fitting the random forest on %d samples.", len(X))
