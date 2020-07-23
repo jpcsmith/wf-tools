@@ -123,25 +123,26 @@ def build_model(
     return model
 
 
-# TODO: Allow saving the model for later
+def default_callbacks(base_patience: int = 5):
+    """Recommended callbacks from the paper."""
+    return [
+        keras.callbacks.ReduceLROnPlateau(
+            monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
+            min_lr=1e-5, patience=base_patience, verbose=1),
+        keras.callbacks.EarlyStopping(
+            monitor='val_accuracy', patience=(2 * base_patience),
+            restore_best_weights=True),
+    ]
+
+
 class VarCNNClassifier(ModifiedKerasClassifier):
     """Var-CNN classifier using a CNN with either timing or direction
     based features.
 
     See `varcnn.build_model` for other arguments.
     """
-    def __init__(self, base_patience: int = 5, **kwargs):
-        super().__init__(
-            build_fn=build_model,
-            callbacks=[
-                keras.callbacks.ReduceLROnPlateau(
-                    monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
-                    min_lr=1e-5, patience=base_patience, verbose=1),
-                keras.callbacks.EarlyStopping(
-                    monitor='val_accuracy', patience=(2 * base_patience),
-                    restore_best_weights=True),
-            ],
-            **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(build_fn=build_model, **kwargs)
 
     def predict_proba(self, x, **kwargs):
         """Returns class probability estimates for the given test data.
