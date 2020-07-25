@@ -26,6 +26,18 @@ def test_extract_interarrival_times():
     np.testing.assert_allclose(extract_interarrival_times(data), expected)
 
 
+def test_metadata_dimension():
+    """It should return the number of columns required for the metadata.
+    """
+    assert Metadata.COUNT_METADATA.n_features == 5
+    assert Metadata.SIZE_METADATA.n_features == 5
+    assert Metadata.TIME_METADATA.n_features == 2
+    assert Metadata.UNSPECIFIED.n_features == 12  # pylint: disable=no-member
+    assert (Metadata.COUNT_METADATA | Metadata.SIZE_METADATA).n_features == 10
+    assert (Metadata.COUNT_METADATA | Metadata.TIME_METADATA).n_features == 7
+    assert (Metadata.UNSPECIFIED | Metadata.TIME_METADATA).n_features == 2
+
+
 @pytest.fixture(name="ragged_data")
 def fixture_ragged_data() -> tuple:
     """Returns a tuple of ragged and padded data of with a max length

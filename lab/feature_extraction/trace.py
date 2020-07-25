@@ -1,6 +1,7 @@
 """Extract features from traces for website fingerprinting
 classification.
 """
+import math
 import enum
 from typing import Sequence, Union
 import numpy as np
@@ -87,6 +88,20 @@ class Metadata(enum.Flag):
     # ratios
     SIZE_METADATA = enum.auto()
 
+    @property
+    def n_features(self):
+        """Return the number of features associated with the metadata
+        type.
+        """
+        metadata = self or ~Metadata.UNSPECIFIED
+
+        sizes = {
+            Metadata.TIME_METADATA: 2,
+            Metadata.SIZE_METADATA: 5,
+            Metadata.COUNT_METADATA: 5,
+        }
+        return sum(size for m, size in sizes.items() if m in metadata)
+
 
 def extract_metadata(
     sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
@@ -98,6 +113,35 @@ def extract_metadata(
 
     Requires sizes or timestamps depending on the metadata requested.
     """
+    assert sizes is not None or timestamps is not None
+    sizes = np.asarray(sizes) if sizes is not None else None
+    timestamps = np.asarray(timestamps) if timestamps is not None else None
+    n_rows = len(sizes) if sizes is not None else len(timestamps)  # type:ignore
+
+    idx = np.arange(n_rows, dtype=int)
+    result = np.ndarray((n_rows, metadata.n_features), float)
+
+    offset = 0
+    n_splits = math.ceil(n_rows / 1000)
+
+    # Perform the extraction on slices so that traces can hold in memory once
+    # non-ragged
+    for split in np.array_split(idx, n_splits):
+        split_sizes = sizes[split] if sizes is not None else None
+        split_times = timestamps[split] if timestamps is not None else None
+        result[offset:offset+len(split), :] = _extract_metadata(
+            split_sizes, split_times, metadata)
+
+        offset += len(split)
+
+    return result
+
+
+def _extract_metadata(
+    sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
+    timestamps: Union[Sequence[Sequence], np.ndarray, None] = None,
+    metadata: Metadata = Metadata.UNSPECIFIED
+) -> np.ndarray:
     # Unspecified is zero, in which case we set to all
     metadata = metadata or ~Metadata.UNSPECIFIED
 
