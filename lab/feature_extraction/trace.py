@@ -106,12 +106,17 @@ class Metadata(enum.Flag):
 def extract_metadata(
     sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
     timestamps: Union[Sequence[Sequence], np.ndarray, None] = None,
-    metadata: Metadata = Metadata.UNSPECIFIED
+    metadata: Metadata = Metadata.UNSPECIFIED,
+    batch_size: int = 0
 ) -> np.ndarray:
     """Extract metadata from the traces.  If unspecified, all metadata
     will be returned.
 
     Requires sizes or timestamps depending on the metadata requested.
+
+    Specify a batch_size greater than zero to process the traces in
+    batches of the specified size. This is helpful to contain the data
+    in memory.
     """
     assert sizes is not None or timestamps is not None
     sizes = np.asarray(sizes) if sizes is not None else None
@@ -122,7 +127,7 @@ def extract_metadata(
     result = np.ndarray((n_rows, metadata.n_features), float)
 
     offset = 0
-    n_splits = math.ceil(n_rows / 1000)
+    n_splits = math.ceil(n_rows / batch_size) if batch_size > 0 else 1
 
     # Perform the extraction on slices so that traces can hold in memory once
     # non-ragged
