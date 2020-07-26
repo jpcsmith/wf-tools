@@ -9,7 +9,9 @@ original can be found at https://github.com/jhayes14/k-FP.
 """
 import math
 import itertools
+import tempfile
 from typing import Tuple, Union, Sequence, Optional
+import multiprocessing
 
 import numpy as np
 
@@ -306,11 +308,70 @@ def make_trace_array(
     return trace_array
 
 
+def _extract_features_sequence_mp(
+    timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
+    max_size: int = DEFAULT_NUM_FEATURES, n_jobs: Optional[int] = None
+) -> np.ndarray:
+    features = np.zeros((len(sizes), max_size), float)
+
+    # # Serialise the timestamps and sizes to file
+    # with tempfile.TemporaryDirectory() as directory:
+    #     np.save(f"{directory}/sizes.npy", sizes)
+    #     np.save(f"{directory}/times.npy", timestamps)
+
+    #     with multiprocessing.Pool(n_jobs) as pool:
+    #         for batch in pool.imap(some_func, np.arange(
+
+    # Pass the filenames and indices to the background process
+    # Recombine them filenames and indices
+    # Return the results
+    return features
+
+
+def _extract_features_sequence_local(
+    timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
+    max_size: int = DEFAULT_NUM_FEATURES
+) -> np.ndarray:
+    features = np.ndarray((len(sizes), max_size), dtype=float)
+
+    for i, (size_row, times_row) in enumerate(zip(sizes, timestamps)):
+        features[i] = extract_features(
+            timestamps=times_row, sizes=size_row, max_size=max_size)
+
+    return features
+
+
+def extract_features_sequence(
+    trace: Optional[Sequence[Trace]] = None,
+    max_size: int = DEFAULT_NUM_FEATURES,
+    timestamps: Optional[Sequence[Sequence[float]]] = None,
+    sizes: Optional[Sequence[Sequence[float]]] = None,
+    n_jobs: Optional[int] = 1
+) -> np.ndarray:
+    """Convenience method around extract_features that accepts a
+    sequence of timestamps and sizes for multiple samples.
+
+    If n_jobs is provided, use multiple processes to extract the
+    features. An n_jobs of None will use all available processes
+    """
+    if trace is not None:
+        raise NotImplementedError("Trace input not currently supported.")
+    assert timestamps is not None
+    assert sizes is not None
+
+    if n_jobs != 1:
+        return _extract_features_sequence_mp(
+            timestamps=timestamps, sizes=sizes, max_size=max_size,
+            n_jobs=n_jobs)
+    return _extract_features_sequence_local(
+        timestamps=timestamps, sizes=sizes, max_size=max_size)
+
+
 def extract_features(
     trace: Trace = None, max_size: int = DEFAULT_NUM_FEATURES,
     timestamps: Optional[Sequence[float]] = None,
     sizes: Optional[Sequence[float]] = None
-) -> Tuple[float, ...]:
+) -> np.ndarray:
     """Return a tuple of features of the specified size, according to the paper
 
         Hayes, Jamie, and George Danezis. "k-fingerprinting: A robust
@@ -376,7 +437,7 @@ def extract_features(
         _extend_exactly(result, pps, remaining_space // 2)
         assert len(result) == max_size
 
-    return tuple(result[:max_size])
+    return np.asarray(result[:max_size])
 
 
 def _extend_exactly(lhs, rhs, amount: int, padding: int = 0):

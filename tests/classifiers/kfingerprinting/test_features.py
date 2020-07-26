@@ -192,3 +192,36 @@ def test_extract_features_length(n_features, trace):
     """The number of features should be as expected."""
     features = _features.extract_features(trace, n_features)
     assert len(features) == n_features
+
+
+@pytest.fixture(name="dataset_seq")
+def fixture_dataset_seq(dataset) -> tuple:
+    """Return multipe (times, sizes, expected_features) where each is
+    an ndarray storing multiple samples.
+    """
+    sizes, times, classes = dataset
+    return times[:10], sizes[:10]
+    times = times[:10]
+
+    features = np.ndarray((len(sizes), 165), dtype=float)
+    for i, (size_row, times_row) in enumerate(zip(sizes, times)):
+        features[i] = _features.extract_features(
+            timestamps=times_row, sizes=size_row)
+
+    return times, sizes, features
+
+
+@pytest.mark.parametrize('n_features', [50, 100, 150, 200, 300])
+def test_extract_features_sequence(dataset_seq, n_features):
+    """It should correct extract features that are provided as a sequence.
+    """
+    times, sizes = dataset_seq
+    features = _features.extract_features_sequence(
+        timestamps=times, sizes=sizes, max_size=n_features)
+
+    expected_features = np.asarray([
+        _features.extract_features(
+            sizes=size_row, timestamps=time_row, max_size=n_features)
+        for size_row, time_row in zip(sizes, times)
+    ])
+    np.testing.assert_allclose(expected_features, features)
