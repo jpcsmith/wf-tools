@@ -7,8 +7,10 @@
 Minor adjustments to the work of the original authors from the paper. The
 original can be found at https://github.com/jhayes14/k-FP.
 """
+import os
 import math
 import itertools
+import functools
 import tempfile
 from typing import Tuple, Union, Sequence, Optional
 import multiprocessing
@@ -308,27 +310,46 @@ def make_trace_array(
     return trace_array
 
 
-def _extract_features_sequence_mp(
+def _run_extraction(idx, directory: str, max_size: int):
+    sizes = np.load(f"{directory}/sizes.npy", allow_pickle=True)[idx]
+    timestamps = np.load(f"{directory}/times.npy", allow_pickle=True)[idx]
+
+    return _extract_features_local(
+        timestamps=timestamps, sizes=sizes, max_size=max_size)
+
+
+def _extract_features_mp(
     timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
     max_size: int = DEFAULT_NUM_FEATURES, n_jobs: Optional[int] = None
 ) -> np.ndarray:
     features = np.zeros((len(sizes), max_size), float)
 
-    # # Serialise the timestamps and sizes to file
-    # with tempfile.TemporaryDirectory() as directory:
-    #     np.save(f"{directory}/sizes.npy", sizes)
-    #     np.save(f"{directory}/times.npy", timestamps)
+    # Serialise the timestamps and sizes to file
+    with tempfile.TemporaryDirectory() as directory:
+        np.save(f"{directory}/sizes.npy", sizes)
+        np.save(f"{directory}/times.npy", timestamps)
 
-    #     with multiprocessing.Pool(n_jobs) as pool:
-    #         for batch in pool.imap(some_func, np.arange(
+        offset = 0
+        n_cpus = os.cpu_count() or 2
+        n_jobs = n_jobs or n_cpus
+        # Use our own splits as chunking would yield them one at a time
+        splits = np.array_split(np.arange(len(sizes)), n_jobs)
 
-    # Pass the filenames and indices to the background process
-    # Recombine them filenames and indices
-    # Return the results
+        with multiprocessing.Pool(n_jobs) as pool:
+            # Pass the filenames and indices to the background process
+            for batch in pool.imap(
+                functools.partial(
+                    _run_extraction, directory=directory, max_size=max_size),
+                splits, chunksize=1
+            ):
+                # Recombine them filenames and indices
+                features[offset:offset+len(batch), :] = batch
+                offset += len(batch)
+
     return features
 
 
-def _extract_features_sequence_local(
+def _extract_features_local(
     timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
     max_size: int = DEFAULT_NUM_FEATURES
 ) -> np.ndarray:
@@ -360,10 +381,10 @@ def extract_features_sequence(
     assert sizes is not None
 
     if n_jobs != 1:
-        return _extract_features_sequence_mp(
+        return _extract_features_mp(
             timestamps=timestamps, sizes=sizes, max_size=max_size,
             n_jobs=n_jobs)
-    return _extract_features_sequence_local(
+    return _extract_features_local(
         timestamps=timestamps, sizes=sizes, max_size=max_size)
 
 

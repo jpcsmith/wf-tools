@@ -211,7 +211,7 @@ def fixture_dataset_seq(dataset) -> tuple:
     return times, sizes, features
 
 
-@pytest.mark.parametrize('n_features', [50, 100, 150, 200, 300])
+@pytest.mark.parametrize('n_features', [100, 300])
 def test_extract_features_sequence(dataset_seq, n_features):
     """It should correct extract features that are provided as a sequence.
     """
@@ -222,6 +222,37 @@ def test_extract_features_sequence(dataset_seq, n_features):
     expected_features = np.asarray([
         _features.extract_features(
             sizes=size_row, timestamps=time_row, max_size=n_features)
+        for size_row, time_row in zip(sizes, times)
+    ])
+    np.testing.assert_allclose(expected_features, features)
+
+
+@pytest.mark.parametrize('n_features', [100, 300])
+def test_extract_features_sequence_mp(dataset_seq, n_features):
+    """It should correct extract features that are provided as a sequence.
+    """
+    times, sizes = dataset_seq
+    features = _features.extract_features_sequence(
+        timestamps=times, sizes=sizes, max_size=n_features, n_jobs=3)
+
+    expected_features = np.asarray([
+        _features.extract_features(
+            sizes=size_row, timestamps=time_row, max_size=n_features)
+        for size_row, time_row in zip(sizes, times)
+    ])
+    np.testing.assert_allclose(expected_features, features)
+
+
+@pytest.mark.parametrize('n_jobs', [2, None])
+def test_extract_features_sequence_mp_jobs(dataset_seq, n_jobs):
+    """It should correct extract features that are provided as a sequence.
+    """
+    times, sizes = dataset_seq
+    features = _features.extract_features_sequence(
+        timestamps=times, sizes=sizes, n_jobs=n_jobs)
+
+    expected_features = np.asarray([
+        _features.extract_features(sizes=size_row, timestamps=time_row)
         for size_row, time_row in zip(sizes, times)
     ])
     np.testing.assert_allclose(expected_features, features)
