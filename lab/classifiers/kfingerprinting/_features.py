@@ -8,6 +8,7 @@ Minor adjustments to the work of the original authors from the paper. The
 original can be found at https://github.com/jhayes14/k-FP.
 """
 import math
+import logging
 import itertools
 import functools
 import tempfile
@@ -20,6 +21,7 @@ import numpy as np
 from lab.trace import Direction, Trace
 
 DEFAULT_NUM_FEATURES = 165
+_LOGGER = logging.getLogger(__name__)
 
 
 # --------------------
@@ -338,17 +340,22 @@ def _extract_features_mp(
         chunksize = 5000
         n_chunks = max(len(sizes) // chunksize, 1)
         splits = np.array_split(np.arange(len(sizes)), n_chunks)
+        assert n_chunks == len(splits)
+        _LOGGER.info("Extracting features in %d batches...", n_chunks)
 
         with multiprocessing.Pool(n_jobs) as pool:
             # Pass the filenames and indices to the background process
-            for batch in pool.imap(
+            for i, batch in enumerate(pool.imap(
                 functools.partial(
                     _run_extraction, directory=directory, max_size=max_size),
                 splits, chunksize=1
-            ):
+            )):
                 # Recombine them filenames and indices
                 features[offset:offset+len(batch), :] = batch
                 offset += len(batch)
+
+                _LOGGER.info("Extraction is %.2f%% complete.",
+                             ((i+1) * 100 / n_chunks))
 
     return features
 
@@ -385,9 +392,12 @@ def extract_features_sequence(
     assert sizes is not None
 
     if n_jobs != 1:
+        _LOGGER.info("Extracting features using %r processes", n_jobs)
         return _extract_features_mp(
             timestamps=timestamps, sizes=sizes, max_size=max_size,
             n_jobs=n_jobs)
+
+    _LOGGER.info("Extracting features locally.")
     return _extract_features_local(
         timestamps=timestamps, sizes=sizes, max_size=max_size)
 
