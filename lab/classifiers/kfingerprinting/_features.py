@@ -329,7 +329,7 @@ def _extract_features_mp(
     features = np.zeros((len(sizes), max_size), float)
 
     # Serialise the timestamps and sizes to file
-    with tempfile.TemporaryDirectory() as directory:
+    with tempfile.TemporaryDirectory(prefix="kfp-extract-") as directory:
         with h5py.File(f"{directory}/data.hdf", mode="w") as h5file:
             dtype = h5py.vlen_dtype(np.dtype("float"))
             h5file.create_dataset("sizes", data=sizes, dtype=dtype)
