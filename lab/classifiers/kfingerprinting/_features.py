@@ -7,7 +7,6 @@
 Minor adjustments to the work of the original authors from the paper. The
 original can be found at https://github.com/jhayes14/k-FP.
 """
-import os
 import math
 import itertools
 import functools
@@ -15,6 +14,7 @@ import tempfile
 from typing import Tuple, Union, Sequence, Optional
 import multiprocessing
 
+import h5py
 import numpy as np
 
 from lab.trace import Direction, Trace
@@ -311,11 +311,13 @@ def make_trace_array(
 
 
 def _run_extraction(idx, directory: str, max_size: int):
-    sizes = np.load(f"{directory}/sizes.npy", allow_pickle=True)[idx]
-    timestamps = np.load(f"{directory}/times.npy", allow_pickle=True)[idx]
+    # Use copies so that the original memory of the full file may be freed
+    with h5py.File(f"{directory}/data.hdf", mode="r") as h5file:
+        sizes = np.asarray(h5file["sizes"][idx], dtype=np.object)
+        times = np.asarray(h5file["timestamps"][idx], dtype=np.object)
 
     return _extract_features_local(
-        timestamps=timestamps, sizes=sizes, max_size=max_size)
+        timestamps=times, sizes=sizes, max_size=max_size)
 
 
 def _extract_features_mp(
@@ -326,14 +328,16 @@ def _extract_features_mp(
 
     # Serialise the timestamps and sizes to file
     with tempfile.TemporaryDirectory() as directory:
-        np.save(f"{directory}/sizes.npy", sizes)
-        np.save(f"{directory}/times.npy", timestamps)
+        with h5py.File(f"{directory}/data.hdf", mode="w") as h5file:
+            dtype = h5py.vlen_dtype(np.dtype("float"))
+            h5file.create_dataset("sizes", data=sizes, dtype=dtype)
+            h5file.create_dataset("timestamps", data=timestamps, dtype=dtype)
 
         offset = 0
-        n_cpus = os.cpu_count() or 2
-        n_jobs = n_jobs or n_cpus
-        # Use our own splits as chunking would yield them one at a time
-        splits = np.array_split(np.arange(len(sizes)), n_jobs)
+        # Use our own splits as imap chunking would yield them one at a time
+        chunksize = 5000
+        n_chunks = max(len(sizes) // chunksize, 1)
+        splits = np.array_split(np.arange(len(sizes)), n_chunks)
 
         with multiprocessing.Pool(n_jobs) as pool:
             # Pass the filenames and indices to the background process
