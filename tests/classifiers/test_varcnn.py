@@ -3,6 +3,7 @@ import pytest
 from sklearn.model_selection import train_test_split
 
 import numpy as np
+from lab.classifiers import varcnn
 from lab.classifiers.varcnn import VarCNNClassifier
 from lab.feature_extraction.trace import (
     ensure_non_ragged, extract_metadata, Metadata, extract_interarrival_times
@@ -47,3 +48,23 @@ def test_varcnn_size(train_test_data):
         epochs=20)
     classifier.fit(x_train, y_train, validation_split=0.1)
     assert classifier.score(x_test, y_test) > 0.8
+
+
+def test_varcnn_combine_predictions():
+    """It should compute the average of the two predictions."""
+    time_predictions = [
+        [.90, .01, .09],
+        [.05, .40, .35]
+    ]
+    size_predictions = [
+        [.80, .10, .10],
+        [.01, .50, .49]
+    ]
+    expected = [
+        [.85, .055, .095],
+        [.03, .450, .420]
+    ]
+
+    np.testing.assert_allclose(
+        expected,
+        varcnn.combine_predictions(size_predictions, time_predictions))

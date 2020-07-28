@@ -16,6 +16,7 @@ import logging
 from typing import Optional
 
 import numpy as np
+from sklearn.utils import check_array
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers
 
@@ -48,6 +49,20 @@ class Crop(layers.Layer):
     def get_config(self) -> dict:
         """Return the configuration."""
         return {"start": self.start, "end": self.end}
+
+
+def combine_predictions(predictions1, predictions2) -> np.ndarray:
+    """Combine two sets of predictions from the SoftMax layer of the
+    VarCNN classifier.
+
+    The variables predictions1, predictions2 should be two array-likes
+    of the same shape containig the output from the classifier.
+    """
+    # This is just the simple arithmetic mean
+    predictions1 = check_array(predictions1, ensure_2d=True)
+    predictions2 = check_array(predictions2, ensure_2d=True)
+
+    return (predictions1 + predictions2) / 2
 
 
 def build_model(
