@@ -37,4 +37,4 @@ def fixture_random_traces():
 def test_extract_features_time(random_traces):
     """Timing analysis of extract_features."""
     for (times, sizes) in random_traces:
-        extract_features(times, sizes)
+        _ = extract_features(times, sizes)
