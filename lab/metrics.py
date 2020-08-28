@@ -1,4 +1,5 @@
 """Additional classification metrics."""
+import logging
 
 
 def recall_score(y_true, y_pred, negative_class=-1):
@@ -30,17 +31,23 @@ def rprecision_score(
 
     for more information.
     """
+    logger = logging.getLogger(__name__)
+
     pos_labels = (y_true != negative_class)
     pos_predictions = (y_pred != negative_class)
 
     n_true_positive = sum(pos_labels & (y_true == y_pred))
+    logger.debug("n_true_positive: %d", n_true_positive)
 
     # Positive predictions which were not correct for positive classes
     n_wrong_positive = sum(pos_labels & pos_predictions & (y_true != y_pred))
     n_false_positive = sum(~pos_labels & pos_predictions)
+    logger.debug("n_wrong_positive: %d, n_false_positive: %d",
+                 n_wrong_positive, n_false_positive)
 
     n_positive = sum(pos_labels)
     n_negative = sum(~pos_labels)
+    logger.debug("n_positive: %d, n_negative: %d", n_positive, n_negative)
 
     true_positive_rate = n_true_positive / n_positive
     wrong_positive_rate = n_wrong_positive / n_positive
@@ -49,5 +56,8 @@ def rprecision_score(
     if n_true_positive == n_wrong_positive == n_false_positive == 0:
         return 0
 
+    logger.debug("r_%d-precision = %.3g / (%.3g + %.3g + %d * %.3g)",
+                 ratio, true_positive_rate, true_positive_rate,
+                 wrong_positive_rate, ratio, false_positive_rate)
     return true_positive_rate / (
         true_positive_rate + wrong_positive_rate + ratio * false_positive_rate)
