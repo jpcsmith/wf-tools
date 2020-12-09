@@ -11,27 +11,20 @@ from pathlib import Path
 from setuptools import setup, find_packages
 
 DEPENDENCIES = [
-    'doceasy>=0.3.0',
-    'click',
     'mypy-extensions',
     'pandas',
     'selenium==4.0.0a1',
     'typing-extensions',
-    'scipy',
     'scikit-learn>=0.22',
-    'tables',
     'snakemake>=5.10',
-    'matplotlib',
-    'seaborn',
     'aiostream==0.4.1',
     'h5py',
-    'mock',
 ]
 
 
 setup(
     name='lab',  # Required
-    description='QUIC traffic analysis experiment sources',  # Optional
+    description='Website fingerprinting experiment tools',  # Optional
     url='https://gitlab.inf.ethz.ch/jsmith/wf-tools',  # Optional
 
     # Optional long description in README.md
@@ -56,7 +49,7 @@ setup(
     install_requires=DEPENDENCIES,
     extras_require={  # Optional
         'dev': ['flake8', 'pylint', 'mypy'],
-        'test': ['pytest', 'pytest-timeout', 'pytest-asyncio'],
+        'test': ['pytest', 'pytest-timeout', 'pytest-asyncio', 'mock'],
         'extras': ['scapy>=2.4.3']
     }
 )
