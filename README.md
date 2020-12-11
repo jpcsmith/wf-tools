@@ -16,7 +16,7 @@ It includes code for fetching and recording website traces as well as feature ex
 ## Installation
 
 This project is not currently listed on pypi.
-Use the provided archive to install the package and its dependencies:
+Install it directly from the git repository using pip as follows.
 
 ```bash
 python3 -m pip install git+https://github.com/jpcsmith/wf-tools.git
@@ -25,6 +25,7 @@ python3 -m pip install git+https://github.com/jpcsmith/wf-tools.git
 ## Licence
 
 This library has an MIT license, as found in the [LICENCE](./LICENCE) file.
+The code in `lab/thirdparty/li2018measuring` is licensed under CRAPL v0 Beta 1.
 
 
 [1]: https://doi.org/10.1145/3243734.3243768 (Deep Fingerprinting)
