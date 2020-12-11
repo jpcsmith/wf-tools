@@ -18,13 +18,13 @@ It includes code for fetching and recording website traces as well as feature ex
 This project is not currently listed on pypi.
 Use the provided archive to install the package and its dependencies:
 
-```console
-$ python3 -m pip install path/to/lab-archive.tar.gz
+```bash
+python3 -m pip install git+https://github.com/jpcsmith/wf-tools.git
 ```
 
-## License
+## Licence
 
-This library has a ------- license, as found in the [LICENSE](./LICENSE) file.
+This library has an MIT license, as found in the [LICENCE](./LICENCE) file.
 
 
 [1]: https://doi.org/10.1145/3243734.3243768 (Deep Fingerprinting)
@@ -33,8 +33,3 @@ This library has a ------- license, as found in the [LICENSE](./LICENSE) file.
 [4]: https://doi.org/10.2478/popets-2019-0070 (Var-CNN)
 [5]: https://doi.org/10.1109/SP40000.2020.00015 (r-precision)
 [6]: https://doi.org/10.1145/3243734.3243832
-
-
-
-
-
