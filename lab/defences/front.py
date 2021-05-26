@@ -9,11 +9,34 @@ For more details see the paper
 """
 import logging
 from typing import Union
-import numpy as np
 
+import numpy as np
+import pandas as pd
+
+from .. import tracev2 as trace
 from . import PACKET_DTYPE, _sort_trace
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def simulate(traffic: np.ndarray, schedule: np.ndarray) -> np.ndarray:
+    """Simulate the the traffic defended FRONT with the specified
+    schedule.
+    """
+    assert traffic.dtype == PACKET_DTYPE
+    assert schedule.dtype == PACKET_DTYPE
+
+    data = (pd.DataFrame(np.concatenate((traffic, schedule)))
+            .assign(is_outgoing=lambda df: df["size"] > 0)
+            .groupby(["time", "is_outgoing"])
+            .sum()
+            .reset_index()
+            .loc[:, ["time", "size"]])
+
+    simulated = np.rec.fromarrays(
+        [data["time"], data["size"]], dtype=PACKET_DTYPE
+    )
+    return trace.sort(simulated)
 
 
 def generate_padding(
