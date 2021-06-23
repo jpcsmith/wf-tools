@@ -1,7 +1,7 @@
 """Read and manipulate numpy arrays that represent traffic traces."""
 import io
 import subprocess
-from typing import Union, List, Tuple, IO
+from typing import Union, List, Tuple, IO, Optional
 from pathlib import PurePath
 
 import numpy as np
@@ -28,24 +28,34 @@ def sort(trace: np.ndarray) -> np.ndarray:
 
 
 def from_pcap(
-    filename: Union[str, PurePath], /,
+    pcap: Union[str, PurePath, bytes], /, *,
+    client_port: Optional[int] = None,
+    server_port: Optional[int] = None,
     relative_timestamps: bool = True
 ) -> np.ndarray:
     """Read and return a trace from the pcap at the specified filename.
 
-    Assume that incoming packets have a srcport of 443 and all others
-    are outgoing packets.
+    The outgoing direction is identified by the client_port if specified,
+    otherwise by the server_port. If neither is specified, a server_port
+    of 443 is used.
     """
+    input_, filename = (pcap, "-") if isinstance(pcap, bytes) else (None, pcap)
+
     command = [
         "tshark", "-r", str(filename),
         "-T", "fields", "-E", "separator=,",
         "-e", "frame.time_epoch", "-e", "udp.length", "-e", "udp.srcport"
     ]
-    result = subprocess.run(command, check=True, stdout=subprocess.PIPE)
+    result = subprocess.run(
+        command, check=True, stdout=subprocess.PIPE, input=input_)
     data = pd.read_csv(
-        io.BytesIO(result.stdout), names=["time", "length", "is_outgoing"]
-    )
-    data["is_outgoing"] = data["is_outgoing"] != 443
+        io.BytesIO(result.stdout), names=["time", "length", "is_outgoing"])
+
+    if client_port:
+        data["is_outgoing"] = data["is_outgoing"] == client_port
+    else:
+        server_port = server_port or 443
+        data["is_outgoing"] = data["is_outgoing"] != server_port
     data.loc[~data["is_outgoing"], "length"] *= -1
 
     if relative_timestamps:
@@ -62,3 +72,8 @@ def from_csv(filename: Union[str, IO]) -> np.ndarray:
     sizes.
     """
     return np.loadtxt(filename, delimiter=",", dtype=PACKET_DTYPE)
+
+
+def to_csv(filename: Union[str, IO, PurePath], trace: np.ndarray):
+    """Save the trace as a headerless CSV file."""
+    np.savetxt(filename, trace, fmt=["%f", "%d"], delimiter=",")
