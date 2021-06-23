@@ -6,6 +6,7 @@ import io
 import abc
 from abc import abstractmethod
 import time
+import contextlib
 import logging
 import threading
 from typing import Optional, IO, List
@@ -157,6 +158,18 @@ if USE_SCAPY:
                 res=self._sniffer.results,
                 stats=[inet.TCP, inet.UDP])
             self._logger.info('Sniffing complete. %r', self._sniffer.results)
+
+
+@contextlib.contextmanager
+def tcpdump(*args, **kwargs):
+    """Sniff packets within a context manager using tcpdump.
+    """
+    sniffer = TCPDumpPacketSniffer(*args, **kwargs)
+    sniffer.start()
+    try:
+        yield sniffer
+    finally:
+        sniffer.stop()
 
 
 class TCPDumpPacketSniffer(PacketSniffer):
