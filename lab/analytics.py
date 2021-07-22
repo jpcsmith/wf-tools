@@ -74,8 +74,8 @@ def rprecision_recall_curve(
         recall[i] = metrics.recall_score(
             y_true, y_pred_thresh, negative_class=neg_label)
 
-        if precision[i] == 0.0 and recall[i] == 0.0:
-            raise RuntimeError(
-                f"Precision and recall both zero at threshold {threshold}")
+        # if precision[i] == 0.0 and recall[i] == 0.0:
+        #     raise RuntimeError(
+        #         f"Precision and recall both zero at threshold {threshold}")
 
     return PRCurveResult(precision, recall, thresholds)
