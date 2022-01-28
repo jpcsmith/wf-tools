@@ -81,3 +81,22 @@ def test_create_for_quic(monkeypatch):
     cli_args = mock_init.call_args[1]['options'].arguments
     assert '--origin-to-force-quic-on=google.com:443' in cli_args
     assert '--quic-version=QUIC_VERSION_43' in cli_args
+
+
+def test_create_for_quic_asterisk(monkeypatch):
+    """It should create the driver with appropriate options for the protocol.
+    """
+    mock_init = Mock(spec=selenium.webdriver.Chrome, strict=True, name='Chrome')
+    monkeypatch.setattr(lab.fetch_websites.webdriver, "Chrome", mock_init)
+
+    factory = ChromiumFactory(driver_path="path", force_quic_on_all=True)
+    driver = factory.create("https://google.com", "Q043")
+
+    mock_init.assert_called_once_with(executable_path="path", options=mock.ANY)
+    assert driver == mock_init.return_value
+
+    # pylint: disable=unsubscriptable-object
+    cli_args = mock_init.call_args[1]['options'].arguments
+    assert '--origin-to-force-quic-on=google.com:443' not in cli_args
+    assert '--origin-to-force-quic-on=*' in cli_args
+    assert '--quic-version=QUIC_VERSION_43' in cli_args

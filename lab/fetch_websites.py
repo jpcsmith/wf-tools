@@ -59,9 +59,14 @@ def _chromium_quic_version_string(protocol: str) -> str:
     raise ValueError(f"Invalid protocol string: {protocol}")
 
 
-def options_for_quic(url: str, protocol: str) -> List[str]:
+def options_for_quic(
+    url: str, protocol: str, force_quic_on_all: bool = False,
+) -> List[str]:
     """Return the options necessary for Chromium to request a particular
     domain with or without QUIC.
+
+    The flag force_quic_on_all will force QUIC on dependent resources
+    when the protocol is a QUIC protocol.
     """
     if protocol.lower() == "tcp":
         return ["--disable-quic"]
@@ -70,9 +75,12 @@ def options_for_quic(url: str, protocol: str) -> List[str]:
     assert parsed.port is None
     assert parsed.hostname is not None
 
-    options = [
-        "--enable-quic", f"--origin-to-force-quic-on={parsed.hostname}:443"
-     ]
+    options = ["--enable-quic"]
+    if force_quic_on_all:
+        options.append("--origin-to-force-quic-on=*")
+    else:
+        options.append(f"--origin-to-force-quic-on={parsed.hostname}:443")
+
     if protocol.lower() != "quic":
         version_string = _chromium_quic_version_string(protocol)
         options += [f"--quic-version={version_string}"]
@@ -95,18 +103,26 @@ class ChromiumFactory(WebDriverFactory):
         Attempt creation of the web-driver at most max_attempts times.
         This helps with spurious failures while running in docker.  Wait
         retry_delay seconds after each attempt.
+
+    force_quic_on_all :
+        Force QUIC on dependent resources when creating a Chromium
+        instance for QUIC.
     """
-    def __init__(self, driver_path: str = './chromedriver',
-                 max_attempts: int = 3, retry_delay: int = 2):
+    def __init__(
+        self, driver_path: str = './chromedriver',
+        max_attempts: int = 3, retry_delay: int = 2,
+        force_quic_on_all: bool = False,
+    ):
         assert driver_path
         assert max_attempts > 0
         self.driver_path = driver_path
         self.max_attempts = max_attempts
         self.retry_delay = retry_delay
+        self.force_quic_on_all = force_quic_on_all
         self._logger = logging.getLogger(__name__)
 
     def create(self, url: str, protocol: str) -> WebDriver:
-        options = ChromiumFactory.chrome_options(url, protocol)
+        options = self.chrome_options(url, protocol)
         for attempt in range(self.max_attempts):
             try:
                 driver = webdriver.Chrome(
@@ -124,9 +140,10 @@ class ChromiumFactory(WebDriverFactory):
                 self._logger.info("Waiting %ss before next attempt",
                                   self.retry_delay)
                 time.sleep(self.retry_delay)
+        assert False, "Should never reach here"
 
-    @staticmethod
-    def chrome_options(url: str, protocol: str) -> webdriver.ChromeOptions:
+    def chrome_options(self, url: str, protocol: str) \
+            -> webdriver.ChromeOptions:
         """Provide a set of options for the chrome webdriver."""
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
@@ -141,7 +158,9 @@ class ChromiumFactory(WebDriverFactory):
         options.add_argument('--enable-logging')
         options.add_argument('--v=1')
 
-        for argument in options_for_quic(url, protocol):
+        for argument in options_for_quic(
+            url, protocol, force_quic_on_all=self.force_quic_on_all
+        ):
             options.add_argument(argument)
 
         # Add tracing of network requests
