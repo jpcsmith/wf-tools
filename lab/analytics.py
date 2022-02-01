@@ -58,8 +58,8 @@ def rprecision_recall_curve(
 
     thresholds = np.unique(np.around(max_probabilities, decimals=3))
 
-    precision = np.zeros(len(thresholds))
-    recall = np.zeros(len(thresholds))
+    precision = np.zeros(len(thresholds) + 1)
+    recall = np.zeros(len(thresholds) + 1)
 
     for i, threshold in enumerate(thresholds):
         below_threshold = (max_probabilities < threshold)
@@ -74,8 +74,11 @@ def rprecision_recall_curve(
         recall[i] = metrics.recall_score(
             y_true, y_pred_thresh, negative_class=neg_label)
 
-        if precision[i] == 0.0 and recall[i] == 0.0:
-            raise RuntimeError(
-                f"Precision and recall both zero at threshold {threshold}")
+        # Precision and recall will be zero if there are no true positives
+        # if precision[i] == 0.0 and recall[i] == 0.0:
+        #     raise RuntimeError(
+        #         f"Precision and recall both zero at threshold {threshold}")
 
+    precision[len(thresholds)] = 1
+    recall[len(thresholds)] = 0
     return PRCurveResult(precision, recall, thresholds)
