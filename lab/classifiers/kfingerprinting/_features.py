@@ -84,7 +84,7 @@ def _prefix_keys(mapping: dict, prefix: Union[str, Sequence[str]]) -> dict:
 def _interarrival_stats(times: Sequence[float]) -> dict:
     return {
         'mean': np.mean(times) if len(times) > 0 else np.nan,
-        'max': max(times, default=np.nan),
+        'max': np.max(times) if len(times) > 0 else np.nan,
         'std': np.std(times) if len(times) > 0 else np.nan,
         'percentile-75': np.percentile(times, 75) if len(times) > 0 else np.nan
     }
@@ -109,9 +109,14 @@ def time_percentiles(overall: Trace, allow_unidir: bool = False) -> dict:
 
     def _percentiles(trace):
         times = _get_timestamps(trace)
-        return {f'percentile-{p}': (np.percentile(times, p)
-                                    if len(times) > 0 else np.nan)
-                for p in [25, 50, 75, 100]}
+        percentile_labels = [
+            "percentile-25", "percentile-50", "percentile-75", "percentile-100"
+        ]
+        percentiles = (
+            np.percentile(times, [25, 50, 75, 100]) if len(times) > 0
+            else [np.nan] * 4
+        )
+        return dict(zip(percentile_labels, percentiles))
 
     return {
         **_prefix_keys(_percentiles(incoming), ['time', 'in']),
@@ -146,7 +151,7 @@ def head_and_tail_concentration(overall: Trace, count: int) -> dict:
     }
 
 
-def packet_concentration_stats(overall: Trace, chunk_size: int) \
+def packet_concentration_stats(overall, chunk_size: int) \
         -> Tuple[dict, Sequence[int]]:
     """Return the std, mean, min, max and median of the number of
     outgoing packets in each chunk of the trace; as well as the
@@ -155,16 +160,25 @@ def packet_concentration_stats(overall: Trace, chunk_size: int) \
     Each chunk is created with 'chunk_size' packets.
     """
     concentrations = []
+
+    if isinstance(overall, np.recarray):
+        is_outgoing_pkt = (overall["direction"] == Direction.OUT)
+    else:
+        is_outgoing_pkt = np.fromiter(
+            (pkt.direction == Direction.OUT for pkt in overall), dtype=bool,
+            count=len(overall)
+        )
+
     for index in range(0, len(overall), chunk_size):
-        chunk = overall[index:(index + chunk_size)]
-        concentrations.append(packet_counts(chunk)['packet-counts::out'])
+        n_out = is_outgoing_pkt[index:(index + chunk_size)].sum()
+        concentrations.append(n_out)
 
     return _prefix_keys({
         'std::out': np.std(concentrations),
         'mean::out': np.mean(concentrations),
         'median::out': np.median(concentrations),
-        'min::out': min(concentrations),
-        'max::out': max(concentrations),
+        'min::out': np.min(concentrations),
+        'max::out': np.max(concentrations),
     }, 'concentration-stats'), concentrations
 
 
@@ -193,9 +207,11 @@ def alternate_packets_per_second(pps: Sequence[int], length: int) \
     """
     # We use the array_split implementation as the chunkIt code was flawed and
     # may return more chunks than requested.
-    result = [sum(group) for group in np.array_split(pps, length)]
-    assert len(result) == length
-    return {'alt-pps::sum': sum(result)}, result
+    result = np.fromiter(
+        (np.sum(group) for group in np.array_split(pps, length)), count=length,
+        dtype=int
+    )
+    return {'alt-pps::sum': np.sum(result)}, result
 
 
 def packets_per_second_stats(overall: Trace) \
@@ -205,16 +221,25 @@ def packets_per_second_stats(overall: Trace) \
     """
     assert overall[0].timestamp == 0, "trace must starts from zero"
     n_seconds = math.ceil(overall[-1].timestamp)
-    packets_per_sec, _ = np.histogram(
-        _get_timestamps(overall), bins=n_seconds, range=(0, n_seconds))
-    packets_per_sec = list(packets_per_sec)
+    times = _get_timestamps(overall)
+    times = np.ceil(times).astype(int)
+
+    packets_per_sec = np.zeros(n_seconds + 1, dtype=int)
+    for time in times:
+        packets_per_sec[time] += 1
+
+    # Only packets with a timestamp of exactly zero (since we use ceil) will
+    # be at index 0. Those should be included with index 1 and then left-shifted
+    if len(packets_per_sec > 1):
+        packets_per_sec[1] += packets_per_sec[0]
+    packets_per_sec = packets_per_sec[1:]
 
     return {
         'pps::mean': np.mean(packets_per_sec),
         'pps::std': np.std(packets_per_sec),
         'pps::median': np.median(packets_per_sec),
-        'pps::min': min(packets_per_sec),
-        'pps::max': max(packets_per_sec)
+        'pps::min': np.min(packets_per_sec),
+        'pps::max': np.max(packets_per_sec)
     }, packets_per_sec
 
 

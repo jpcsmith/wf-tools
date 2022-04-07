@@ -288,7 +288,7 @@ def test_packets_per_second(trace_info):
     stats, pps = _features.packets_per_second_stats(trace)
 
     assert ref_stats == list(stats.values())
-    assert ref_pps == pps
+    assert np.array_equal(ref_pps, pps)
 
 
 def test_packet_ordering_stats(trace, sample_trace: Trace):
