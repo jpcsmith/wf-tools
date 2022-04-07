@@ -230,9 +230,9 @@ def packets_per_second_stats(overall: Trace) \
 
     # Only packets with a timestamp of exactly zero (since we use ceil) will
     # be at index 0. Those should be included with index 1 and then left-shifted
-    if len(packets_per_sec > 1):
+    if len(packets_per_sec) > 1:
         packets_per_sec[1] += packets_per_sec[0]
-    packets_per_sec = packets_per_sec[1:]
+        packets_per_sec = packets_per_sec[1:]
 
     return {
         'pps::mean': np.mean(packets_per_sec),
