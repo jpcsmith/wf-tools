@@ -57,16 +57,18 @@ def _get_timestamps(array_like) -> np.ndarray:
 def _inter_pkt_time(list_data):
     if len(list_data) == 1:
         return [0.0, ]
+    if len(list_data) == 0:
+        return []
 
     times = _get_timestamps(list_data)
     return (np.concatenate((times[1:], [times[0]])) - times)[:-1]
 
 
-def interarrival_times(list_data):
+def interarrival_times(list_data, allow_unidir: bool):
     """Return the interarrival times of the incoming, outgoing, and overall
     packet sequences.
     """
-    incoming, outgoing = split_in_out(list_data)
+    incoming, outgoing = split_in_out(list_data, check=(not allow_unidir))
     inter_in = _inter_pkt_time(incoming)
     inter_out = _inter_pkt_time(outgoing)
     inter_overall = _inter_pkt_time(list_data)
@@ -81,18 +83,18 @@ def _prefix_keys(mapping: dict, prefix: Union[str, Sequence[str]]) -> dict:
 
 def _interarrival_stats(times: Sequence[float]) -> dict:
     return {
-        'mean': np.mean(times) if len(times) > 0 else 0,
-        'max': max(times, default=0),
-        'std': np.std(times) if len(times) > 0 else 0,
-        'percentile-75': np.percentile(times, 75) if len(times) > 0 else 0
+        'mean': np.mean(times) if len(times) > 0 else np.nan,
+        'max': max(times, default=np.nan),
+        'std': np.std(times) if len(times) > 0 else np.nan,
+        'percentile-75': np.percentile(times, 75) if len(times) > 0 else np.nan
     }
 
 
-def interarrival_stats(list_data: Trace) -> dict:
+def interarrival_stats(list_data: Trace, allow_unidir: bool = False) -> dict:
     """Extract the mean, std, max, 75th-percentile for the incoming,
     outgoing, and overall traces.
     """
-    incoming, outgoing, overall = interarrival_times(list_data)
+    incoming, outgoing, overall = interarrival_times(list_data, allow_unidir)
     return {
         **_prefix_keys(_interarrival_stats(incoming), ['interarrival', 'in']),
         **_prefix_keys(_interarrival_stats(outgoing), ['interarrival', 'out']),
@@ -101,14 +103,14 @@ def interarrival_stats(list_data: Trace) -> dict:
     }
 
 
-def time_percentiles(overall: Trace) -> dict:
+def time_percentiles(overall: Trace, allow_unidir: bool = False) -> dict:
     """Return the 25th, 50th, 75th and 100th percentiles of the timestamps."""
-    incoming, outgoing = split_in_out(overall)
+    incoming, outgoing = split_in_out(overall, check=(not allow_unidir))
 
     def _percentiles(trace):
         times = _get_timestamps(trace)
         return {f'percentile-{p}': (np.percentile(times, p)
-                                    if len(times) > 0 else 0)
+                                    if len(times) > 0 else np.nan)
                 for p in [25, 50, 75, 100]}
 
     return {
@@ -201,6 +203,7 @@ def packets_per_second_stats(overall: Trace) \
     """Return the mean, std, min, median and max number of packets per
     second, as well as the number of packets each second.
     """
+    assert overall[0].timestamp == 0, "trace must starts from zero"
     n_seconds = math.ceil(overall[-1].timestamp)
     packets_per_sec, _ = np.histogram(
         _get_timestamps(overall), bins=n_seconds, range=(0, n_seconds))
@@ -223,16 +226,20 @@ def packet_ordering_stats(overall: Trace) -> dict:
         in_preceeding = np.nonzero(overall["direction"] < 0)[0]
         out_preceeding = np.nonzero(overall["direction"] > 0)[0]
     else:
-        in_preceeding = [i for i, pkt in enumerate(overall)
-                         if pkt.direction == Direction.IN]
-        out_preceeding = [i for i, pkt in enumerate(overall)
-                          if pkt.direction == Direction.OUT]
+        in_preceeding = np.asarray([i for i, pkt in enumerate(overall)
+                                    if pkt.direction == Direction.IN])
+        out_preceeding = np.asarray([i for i, pkt in enumerate(overall)
+                                     if pkt.direction == Direction.OUT])
 
     return {
-        'packet-order::out::mean': np.mean(out_preceeding),
-        'packet-order::in::mean': np.mean(in_preceeding),
-        'packet-order::out::std': np.std(out_preceeding),
-        'packet-order::in::std': np.std(in_preceeding),
+        'packet-order::out::mean':
+            np.mean(out_preceeding) if len(out_preceeding) > 0 else np.nan,
+        'packet-order::in::mean':
+            np.mean(in_preceeding) if len(in_preceeding) > 0 else np.nan,
+        'packet-order::out::std':
+            np.std(out_preceeding) if len(out_preceeding) > 0 else np.nan,
+        'packet-order::in::std':
+            np.std(in_preceeding) if len(in_preceeding) > 0 else np.nan,
     }
 
 
@@ -255,9 +262,9 @@ def _get_sizes(array_like):
     return [x[2] for x in array_like]
 
 
-def total_packet_sizes(overall: Trace) -> dict:
+def total_packet_sizes(overall: Trace, allow_unidir: bool = False) -> dict:
     """Return the total incoming, outgoing and overall packet sizes."""
-    incoming, outgoing = split_in_out(overall)
+    incoming, outgoing = split_in_out(overall, check=(not allow_unidir))
 
     # Use absolute value in case the input sizes are signed
     result = {
@@ -272,16 +279,18 @@ def total_packet_sizes(overall: Trace) -> dict:
 def _packet_size_stats(trace: Trace) -> dict:
     sizes = _get_sizes(trace)
     return {
-        'mean': np.mean(sizes), 'var': np.var(sizes),
-        'std': np.std(sizes), 'max': np.max(sizes)
+        'mean': np.mean(sizes) if len(sizes) > 0 else np.nan,
+        'var': np.var(sizes) if len(sizes) > 0 else np.nan,
+        'std': np.std(sizes) if len(sizes) > 0 else np.nan,
+        'max': np.max(sizes) if len(sizes) > 0 else np.nan,
     }
 
 
-def packet_size_stats(overall: Trace) -> dict:
+def packet_size_stats(overall: Trace, allow_unidir: bool = False) -> dict:
     """Return the mean, var, std, and max of the incoming, outgoing,
     and overall packet traces.
     """
-    incoming, outgoing = split_in_out(overall)
+    incoming, outgoing = split_in_out(overall, check=(not allow_unidir))
     return {
         **_prefix_keys(_packet_size_stats(incoming), 'size-stats::in'),
         **_prefix_keys(_packet_size_stats(outgoing), 'size-stats::out'),
@@ -312,19 +321,24 @@ def make_trace_array(
     return trace_array
 
 
-def _run_extraction(idx, directory: str, max_size: int):
+def _run_extraction(idx, directory: str, max_size: int, allow_unidir: bool):
     # Use copies so that the original memory of the full file may be freed
     with h5py.File(f"{directory}/data.hdf", mode="r") as h5file:
-        sizes = np.asarray(h5file["sizes"][idx], dtype=np.object)
-        times = np.asarray(h5file["timestamps"][idx], dtype=np.object)
+        sizes = np.asarray(h5file["sizes"][idx], dtype=object)
+        times = np.asarray(h5file["timestamps"][idx], dtype=object)
 
     return _extract_features_local(
-        timestamps=times, sizes=sizes, max_size=max_size)
+        timestamps=times, sizes=sizes, max_size=max_size,
+        allow_unidir=allow_unidir
+    )
 
 
 def _extract_features_mp(
-    timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
-    max_size: int = DEFAULT_NUM_FEATURES, n_jobs: Optional[int] = None
+    timestamps: Sequence[Sequence[float]],
+    sizes: Sequence[Sequence[float]],
+    max_size: int,
+    n_jobs: Optional[int],
+    allow_unidir: bool,
 ) -> np.ndarray:
     features = np.zeros((len(sizes), max_size), float)
 
@@ -347,7 +361,9 @@ def _extract_features_mp(
             # Pass the filenames and indices to the background process
             for i, batch in enumerate(pool.imap(
                 functools.partial(
-                    _run_extraction, directory=directory, max_size=max_size),
+                    _run_extraction, directory=directory, max_size=max_size,
+                    allow_unidir=allow_unidir
+                ),
                 splits, chunksize=1
             )):
                 # Recombine them filenames and indices
@@ -361,14 +377,18 @@ def _extract_features_mp(
 
 
 def _extract_features_local(
-    timestamps: Sequence[Sequence[float]], sizes: Sequence[Sequence[float]],
-    max_size: int = DEFAULT_NUM_FEATURES
+    timestamps: Sequence[Sequence[float]],
+    sizes: Sequence[Sequence[float]],
+    max_size: int,
+    allow_unidir: bool,
 ) -> np.ndarray:
     features = np.ndarray((len(sizes), max_size), dtype=float)
 
     for i, (size_row, times_row) in enumerate(zip(sizes, timestamps)):
         features[i] = extract_features(
-            timestamps=times_row, sizes=size_row, max_size=max_size)
+            timestamps=times_row, sizes=size_row, max_size=max_size,
+            allow_unidir=allow_unidir
+        )
 
     return features
 
@@ -378,7 +398,8 @@ def extract_features_sequence(
     max_size: int = DEFAULT_NUM_FEATURES,
     timestamps: Optional[Sequence[Sequence[float]]] = None,
     sizes: Optional[Sequence[Sequence[float]]] = None,
-    n_jobs: Optional[int] = 1
+    n_jobs: Optional[int] = 1,
+    allow_unidir: bool = False,
 ) -> np.ndarray:
     """Convenience method around extract_features that accepts a
     sequence of timestamps and sizes for multiple samples.
@@ -395,17 +416,20 @@ def extract_features_sequence(
         _LOGGER.info("Extracting features using %r processes", n_jobs)
         return _extract_features_mp(
             timestamps=timestamps, sizes=sizes, max_size=max_size,
-            n_jobs=n_jobs)
+            n_jobs=n_jobs, allow_unidir=allow_unidir)
 
     _LOGGER.info("Extracting features locally.")
     return _extract_features_local(
-        timestamps=timestamps, sizes=sizes, max_size=max_size)
+        timestamps=timestamps, sizes=sizes, max_size=max_size,
+        allow_unidir=allow_unidir
+    )
 
 
 def extract_features(
     trace: Trace = None, max_size: int = DEFAULT_NUM_FEATURES,
     timestamps: Optional[Sequence[float]] = None,
-    sizes: Optional[Sequence[float]] = None
+    sizes: Optional[Sequence[float]] = None,
+    allow_unidir: bool = False,
 ) -> np.ndarray:
     """Return a tuple of features of the specified size, according to the paper
 
@@ -425,11 +449,12 @@ def extract_features(
         assert timestamps is not None and sizes is not None
         trace = make_trace_array(timestamps=timestamps, sizes=sizes)
 
+    assert trace is not None
     assert trace[0].timestamp == 0
 
     all_features = {}
-    all_features.update(interarrival_stats(trace))
-    all_features.update(time_percentiles(trace))
+    all_features.update(interarrival_stats(trace, allow_unidir=allow_unidir))
+    all_features.update(time_percentiles(trace, allow_unidir=allow_unidir))
     all_features.update(packet_counts(trace))
     all_features.update(head_and_tail_concentration(trace, 30))
 
@@ -442,8 +467,8 @@ def extract_features(
     all_features.update(packet_ordering_stats(trace))
     all_features.update(in_out_fraction(trace))
 
-    all_features.update(total_packet_sizes(trace))
-    all_features.update(packet_size_stats(trace))
+    all_features.update(total_packet_sizes(trace, allow_unidir=allow_unidir))
+    all_features.update(packet_size_stats(trace, allow_unidir=allow_unidir))
 
     result = [all_features[feat] for feat in DEFAULT_TIMING_FEATURES]
 
