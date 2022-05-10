@@ -17,7 +17,7 @@ from tensorflow.compat.v1.keras import layers, initializers
 from lab.classifiers.wrappers import ModifiedKerasClassifier
 
 
-def build_model(n_features: int, n_classes: int):
+def build_model(n_features: int, n_classes: int, metric="accuracy"):
     """Create and return the DeepFingerprinting Model."""
     model = keras.Sequential()
     # Block1
@@ -114,7 +114,7 @@ def build_model(n_features: int, n_classes: int):
         loss="categorical_crossentropy",
         optimizer=keras.optimizers.Adamax(
             lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0),
-        metrics=["accuracy"])
+        metrics=[metric])
 
     return model
 
@@ -122,6 +122,8 @@ def build_model(n_features: int, n_classes: int):
 class DeepFingerprintingClassifier(ModifiedKerasClassifier):
     """Website fingerprinting classifer using a CNN."""
     def __init__(self, **kwargs):
+        if "build_fn" in kwargs:
+            del kwargs["build_fn"]
         super().__init__(build_fn=build_model, **kwargs)
 
     def __repr__(self) -> str:
