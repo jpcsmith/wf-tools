@@ -71,6 +71,7 @@ def build_model(
     n_meta_features: int = 7,
     dilations: bool = True,
     tag: str = "varcnn",
+    learning_rate: float = 0.001
 ):
     """Build the Var-CNN model.
 
@@ -133,19 +134,23 @@ def build_model(
     model = keras.Model(inputs=input_layer, outputs=model_output)
     model.compile(
         loss='categorical_crossentropy', metrics=['accuracy'],
-        optimizer=keras.optimizers.Adam(0.001))
+        optimizer=keras.optimizers.Adam(learning_rate))
 
     return model
 
 
-def default_callbacks(base_patience: int = 5):
+def default_callbacks(
+    base_patience: int = 5, *,
+    monitor="val_accuracy",
+    lr_decay: float = np.sqrt(0.1)
+):
     """Recommended callbacks from the paper."""
     return [
         keras.callbacks.ReduceLROnPlateau(
-            monitor='val_accuracy', factor=np.sqrt(0.1), cooldown=0,
-            min_lr=1e-5, patience=base_patience, verbose=1),
+            monitor=monitor, factor=lr_decay, cooldown=0, min_lr=1e-5,
+            patience=base_patience, verbose=1),
         keras.callbacks.EarlyStopping(
-            monitor='val_accuracy', patience=(2 * base_patience),
+            monitor=monitor, patience=(2 * base_patience),
             restore_best_weights=True),
     ]
 
@@ -157,6 +162,8 @@ class VarCNNClassifier(ModifiedKerasClassifier):
     See `varcnn.build_model` for other arguments.
     """
     def __init__(self, **kwargs):
+        if "build_fn" in kwargs:
+            del kwargs["build_fn"]
         super().__init__(build_fn=build_model, **kwargs)
 
     def predict_proba(self, x, **kwargs):
@@ -178,6 +185,13 @@ class VarCNNClassifier(ModifiedKerasClassifier):
             # first column is probability of class 0 and second is of class 1
             probs = np.hstack([1 - probs, probs])
         return probs
+
+    def predict(self, x, **kwargs):
+        """Returns the class predictions for the given test data.
+        """
+        probs = self.predict_proba(x, **kwargs)
+        classes = np.argmax(probs, axis=1)
+        return self.classes_[classes]
 
 
 # Code for standard ResNet model is based on
