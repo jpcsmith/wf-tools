@@ -59,10 +59,16 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, forest: Optional[RandomForestClassifier] = None,
                  n_neighbours: int = 2, n_jobs=None, random_state=None,
                  unknown_label: Union[str, int] = -1):
-        self.forest = forest
+
+        if forest is not None:
+            self.forest = forest
+        else:
+            self.forest = RandomForestClassifier(
+                n_estimators=150, oob_score=True
+            )
+        self.random_state = random_state
         self.n_neighbours = n_neighbours
         self.n_jobs = n_jobs
-        self.random_state = random_state
         self.unknown_label = unknown_label
 
     def fit(self, X, y):  # pylint: disable=invalid-name
@@ -83,11 +89,10 @@ class KFingerprintingClassifier(BaseEstimator, ClassifierMixin):
 
         # pylint: disable=attribute-defined-outside-init
         self.classes_ = unique_labels(y)
-        self.forest_ = (sklearn.base.clone(self.forest)
-                        if self.forest is not None
-                        else RandomForestClassifier(
-                            n_estimators=150, oob_score=True,
-                            n_jobs=self.n_jobs, random_state=self.random_state))
+        self.forest_ = sklearn.base.clone(self.forest)
+        self.forest_.set_params(
+            n_jobs=self.n_jobs, random_state=self.random_state
+        )
 
         self.forest_.fit(X, y)
 
