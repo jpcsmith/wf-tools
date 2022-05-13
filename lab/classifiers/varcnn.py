@@ -142,13 +142,14 @@ def build_model(
 def default_callbacks(
     base_patience: int = 5, *,
     monitor="val_accuracy",
-    lr_decay: float = np.sqrt(0.1)
+    lr_decay: float = np.sqrt(0.1),
+    verbose: int = 0,
 ):
     """Recommended callbacks from the paper."""
     return [
         keras.callbacks.ReduceLROnPlateau(
             monitor=monitor, factor=lr_decay, cooldown=0, min_lr=1e-5,
-            patience=base_patience, verbose=1),
+            patience=base_patience, verbose=verbose),
         keras.callbacks.EarlyStopping(
             monitor=monitor, patience=(2 * base_patience),
             restore_best_weights=True),
