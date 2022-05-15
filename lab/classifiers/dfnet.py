@@ -17,7 +17,10 @@ from tensorflow.compat.v1.keras import layers, initializers
 from lab.classifiers.wrappers import ModifiedKerasClassifier
 
 
-def build_model(n_features: int, n_classes: int, metric="accuracy"):
+def build_model(
+    n_features: int, n_classes: int, metric="accuracy",
+    learning_rate: float = 0.002
+):
     """Create and return the DeepFingerprinting Model."""
     model = keras.Sequential()
     # Block1
@@ -113,7 +116,9 @@ def build_model(n_features: int, n_classes: int, metric="accuracy"):
     model.compile(
         loss="categorical_crossentropy",
         optimizer=keras.optimizers.Adamax(
-            lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0),
+            learning_rate=learning_rate, beta_1=0.9, beta_2=0.999,
+            epsilon=1e-08, decay=0.0
+        ),
         metrics=[metric])
 
     return model
