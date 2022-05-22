@@ -13,12 +13,14 @@ The original can be found at https://github.com/sanjit-bhat/Var-CNN.
 # pylint: disable=too-many-arguments,invalid-name,too-many-instance-attributes
 # pylint: disable=too-few-public-methods
 import logging
+import functools
 from typing import Optional
 
 import numpy as np
 from sklearn.utils import check_array
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers
+from tensorflow.python.keras.utils.np_utils import to_categorical
 
 from lab.classifiers.wrappers import ModifiedKerasClassifier
 
@@ -65,6 +67,7 @@ def combine_predictions(predictions1, predictions2) -> np.ndarray:
     return (predictions1 + predictions2) / 2
 
 
+@functools.lru_cache
 def build_model(
     n_classes: int,
     n_packet_features: int,
@@ -165,7 +168,20 @@ class VarCNNClassifier(ModifiedKerasClassifier):
     def __init__(self, **kwargs):
         if "build_fn" in kwargs:
             del kwargs["build_fn"]
-        super().__init__(build_fn=build_model, **kwargs)
+        super().__init__(build_fn=None, **kwargs)
+
+    def __call__(
+        self,
+        n_packet_features: int,
+        n_meta_features: int = 7,
+        dilations: bool = True,
+        tag: str = "varcnn",
+        learning_rate: float = 0.001
+    ):
+        return build_model(
+            self.n_classes_, n_packet_features, n_meta_features,
+            dilations, tag, learning_rate
+        )
 
     def predict_proba(self, x, **kwargs):
         """Returns class probability estimates for the given test data.
@@ -193,6 +209,53 @@ class VarCNNClassifier(ModifiedKerasClassifier):
         probs = self.predict_proba(x, **kwargs)
         classes = np.argmax(probs, axis=1)
         return self.classes_[classes]
+
+    def fit(self, x, y, **kwargs):
+        """Fit the model, reshaping validation_data if present."""
+        # Reshape the validation set args in a similar fashion to how y will be
+        # reshaped. Only necessary because varcnn uses categorical cross entropy
+        params = self.get_params()
+        if "validation_data" in params and "validation_data" not in kwargs:
+            # Pass the validation data reshaped in kwargs so that it is used
+            # instead of the unshaped validation_data that was provided in the
+            # constructor.
+            kwargs["validation_data"] = params["validation_data"]
+
+        if "validation_data" in kwargs:
+            val_x, val_y = kwargs["validation_data"]
+
+            if len(val_y.shape) == 1:
+                kwargs["validation_data"] = self._reshape_val_data(
+                    x, y, val_x, val_y
+                )
+
+        super().fit(x, y, **kwargs)
+
+    def _reshape_val_data(self, train_x, train_y, val_x, val_y):
+        params = self.get_params()
+
+        # Encode the the validation y using the classes from the
+        # training set
+        classes_ = np.unique(train_y)
+        val_y = np.searchsorted(classes_, val_y)
+        # Make it categorical
+        val_y = to_categorical(val_y)
+
+        # Remove any columns to be dropped from X
+        n_features = train_x.shape[1]
+        idx = np.r_[
+            :params["n_packet_features"],
+            (n_features - params["n_meta_features"]):n_features
+        ]
+        val_x = val_x[:, idx]
+
+        return (val_x, val_y)
+
+# def first_n_packets(features, *, n_packets: int):
+#     """Return the first n_packets packets along with the meta features."""
+#     n_features = features.shape[1]
+#     idx = np.r_[:n_packets, (n_features - N_META_FEATURES):n_features]
+#     return features[:, idx]
 
 
 # Code for standard ResNet model is based on
