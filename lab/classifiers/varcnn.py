@@ -13,7 +13,6 @@ The original can be found at https://github.com/sanjit-bhat/Var-CNN.
 # pylint: disable=too-many-arguments,invalid-name,too-many-instance-attributes
 # pylint: disable=too-few-public-methods
 import logging
-import functools
 from typing import Optional
 
 import numpy as np
@@ -67,7 +66,6 @@ def combine_predictions(predictions1, predictions2) -> np.ndarray:
     return (predictions1 + predictions2) / 2
 
 
-@functools.lru_cache
 def build_model(
     n_classes: int,
     n_packet_features: int,
