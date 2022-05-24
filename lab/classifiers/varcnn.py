@@ -176,7 +176,6 @@ class VarCNNClassifier(ModifiedKerasClassifier):
         tag: str = "varcnn",
         learning_rate: float = 0.001
     ):
-        keras.backend.clear_session()
         return build_model(
             self.n_classes_, n_packet_features, n_meta_features,
             dilations, tag, learning_rate
