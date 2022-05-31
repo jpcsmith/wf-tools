@@ -19,6 +19,7 @@ DEPENDENCIES = [
     'snakemake>=5.10',
     'aiostream==0.4.1',
     'h5py',
+    'tensorflow==2.5',
 ]
 
 
