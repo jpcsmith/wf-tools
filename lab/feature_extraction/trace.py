@@ -15,7 +15,8 @@ def check_traces(X) -> np.ndarray:
     if len(X.shape) != 3:
         raise ValueError(
             "A trace sequence should be a 3-dimension array-like. Actual shape "
-            f"is {X.shape}. Ensure it's not jagged.")
+            f"is {X.shape}. Ensure it's not jagged."
+        )
     return X
 
 
@@ -47,7 +48,7 @@ def ensure_non_ragged(
     for i, trace in enumerate(X):
         # Avoid slicing the list if not necessary
         if len(trace) <= dimension:
-            result[i, :len(trace)] = trace
+            result[i, : len(trace)] = trace
         else:
             result[i, :] = trace[:dimension]
     return result
@@ -76,8 +77,8 @@ def extract_interarrival_times(X, dimension: int = 0) -> np.ndarray:
 
 
 class Metadata(enum.Flag):
-    """Supported trace metadata.
-    """
+    """Supported trace metadata."""
+
     UNSPECIFIED = 0
     # Metadata such as total, incoming, and outgoing packet counts and their
     # ratios
@@ -107,7 +108,7 @@ def extract_metadata(
     sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
     timestamps: Union[Sequence[Sequence], np.ndarray, None] = None,
     metadata: Metadata = Metadata.UNSPECIFIED,
-    batch_size: int = 0
+    batch_size: int = 0,
 ) -> np.ndarray:
     """Extract metadata from the traces.  If unspecified, all metadata
     will be returned.
@@ -134,8 +135,9 @@ def extract_metadata(
     for split in np.array_split(idx, n_splits):
         split_sizes = sizes[split] if sizes is not None else None
         split_times = timestamps[split] if timestamps is not None else None
-        result[offset:offset+len(split), :] = _extract_metadata(
-            split_sizes, split_times, metadata)
+        result[offset : offset + len(split), :] = _extract_metadata(
+            split_sizes, split_times, metadata
+        )
 
         offset += len(split)
 
@@ -145,7 +147,7 @@ def extract_metadata(
 def _extract_metadata(
     sizes: Union[Sequence[Sequence], np.ndarray, None] = None,
     timestamps: Union[Sequence[Sequence], np.ndarray, None] = None,
-    metadata: Metadata = Metadata.UNSPECIFIED
+    metadata: Metadata = Metadata.UNSPECIFIED,
 ) -> np.ndarray:
     # Unspecified is zero, in which case we set to all
     metadata = metadata or ~Metadata.UNSPECIFIED
@@ -168,21 +170,30 @@ def _extract_metadata(
         results["packet_count"] = np.sum((sizes != 0), axis=1)
         results["outgoing_count"] = np.sum((sizes > 0), axis=1)
         results["incoming_count"] = np.sum((sizes < 0), axis=1)
-        results["outgoing_ratio"] = (
-            results["outgoing_count"] / results["packet_count"])
-        results["incoming_ratio"] = (
-            results["incoming_count"] / results["packet_count"])
+
+        # Handle empty traces by only dividing when the denominator would be
+        results["outgoing_ratio"] = _safe_divide(
+            results["outgoing_count"], results["packet_count"]
+        )
+        results["incoming_ratio"] = _safe_divide(
+            results["incoming_count"], results["packet_count"]
+        )
 
     if Metadata.SIZE_METADATA in metadata:
         results["transfer_size"] = np.sum(np.abs(sizes), axis=1)
         results["outgoing_size"] = np.sum(
-            np.where(sizes > 0, sizes, 0), axis=1)  # type: ignore
+            np.where(sizes > 0, sizes, 0), axis=1
+        )  # type: ignore
         results["incoming_size"] = np.sum(
-            np.where(sizes < 0, np.abs(sizes), 0), axis=1)  # type: ignore
-        results["outgoing_size_ratio"] = \
-            results["outgoing_size"] / results["transfer_size"]
-        results["incoming_size_ratio"] = \
-            results["incoming_size"] / results["transfer_size"]
+            np.where(sizes < 0, np.abs(sizes), 0), axis=1
+        )  # type: ignore
+
+        results["outgoing_size_ratio"] = _safe_divide(
+            results["outgoing_size"], results["transfer_size"]
+        )
+        results["incoming_size_ratio"] = _safe_divide(
+            results["incoming_size"], results["transfer_size"]
+        )
 
     if Metadata.TIME_METADATA in metadata:
         # Count the number of non-zero times plus the initial zero packet
@@ -191,3 +202,9 @@ def _extract_metadata(
         results["duration_per_packet"] = results["duration"] / packet_count
 
     return np.transpose(list(results.values()))
+
+
+def _safe_divide(numerator, denominator, default: float = 0.0):
+    result = np.full(numerator.shape, fill_value=default, dtype=float)
+    np.divide(numerator, denominator, where=(denominator != 0), out=result)
+    return result

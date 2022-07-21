@@ -19,7 +19,7 @@ def make_trace(direction: str, format_: str):
     assert direction in ("in", "out", "both"), "unrecognised direction"
     assert format_ in ("Trace", "recarray")
 
-    path = Path(__file__).with_name('sample-trace.json')
+    path = Path(__file__).with_name("sample-trace.json")
     trace = TraceData.deserialise(path.read_text()).trace
 
     if direction in ("in", "out"):
@@ -29,12 +29,15 @@ def make_trace(direction: str, format_: str):
 
         # Adjust starting timestamp
         start = trace[0].timestamp
-        trace = [pkt._replace(timestamp=(pkt.timestamp-start)) for pkt in trace]
+        trace = [pkt._replace(timestamp=(pkt.timestamp - start)) for pkt in trace]
 
     if format_ == "recarray":
-        return np.asarray(trace, dtype=[
-            ("timestamp", "f8"), ("direction", "i1"), ("size", "i8")
-        ]).view(np.recarray), trace
+        return (
+            np.asarray(
+                trace, dtype=[("timestamp", "f8"), ("direction", "i1"), ("size", "i8")]
+            ).view(np.recarray),
+            trace,
+        )
     assert format_ == "Trace"
     return trace, trace
 
@@ -58,13 +61,13 @@ def split_trace(sample_trace) -> tuple:
     trace = np.asarray(sample_trace)
     times = trace[:, 0]
     sizes = trace[:, 1] * trace[:, 2]
-    return namedtuple(  # type: ignore
-        "split_trace", ["timestamps", "sizes"])(times, sizes)
+    return namedtuple("split_trace", ["timestamps", "sizes"])(  # type: ignore
+        times, sizes
+    )
 
 
 @pytest.fixture(
-    name="trace", params=["recarray", "Trace"],
-    ids=lambda x: trace_id(("both", x))
+    name="trace", params=["recarray", "Trace"], ids=lambda x: trace_id(("both", x))
 )
 def fixture_trace(request):
     """Return trace data as a recarray or Trace. To get the same data
@@ -73,9 +76,7 @@ def fixture_trace(request):
     return make_trace("both", format_=request.param)[0]
 
 
-@pytest.fixture(
-    params=product(["in", "out"], ["recarray", "Trace"]), ids=trace_id
-)
+@pytest.fixture(params=product(["in", "out"], ["recarray", "Trace"]), ids=trace_id)
 def unidir_trace(request):
     """Return a unidirectional trace generated from the sample trace."""
     direction, format_ = request.param
@@ -95,7 +96,7 @@ def trace_info(request) -> tuple:
 
 def as_lines(trace) -> Sequence[str]:
     """Return the trace as a sequence of lines."""
-    return [' '.join(str(val) for val in pkt) for pkt in trace]
+    return [" ".join(str(val) for val in pkt) for pkt in trace]
 
 
 def test_interarrival_stats(trace, sample_trace: Trace):
@@ -103,23 +104,28 @@ def test_interarrival_stats(trace, sample_trace: Trace):
     ref_result = rf_fextract.interarrival_maxminmeansd_stats(sample_trace)
     result = _features.interarrival_stats(trace)
 
-    assert ref_result == [(
-        result['interarrival::in::max'], result['interarrival::out::max'],
-        result['interarrival::overall::max'],
-        result['interarrival::in::mean'], result['interarrival::out::mean'],
-        result['interarrival::overall::mean'],
-        result['interarrival::in::std'], result['interarrival::out::std'],
-        result['interarrival::overall::std'],
-        result['interarrival::in::percentile-75'],
-        result['interarrival::out::percentile-75'],
-        result['interarrival::overall::percentile-75'],
-    )]
+    assert ref_result == [
+        (
+            result["interarrival::in::max"],
+            result["interarrival::out::max"],
+            result["interarrival::overall::max"],
+            result["interarrival::in::mean"],
+            result["interarrival::out::mean"],
+            result["interarrival::overall::mean"],
+            result["interarrival::in::std"],
+            result["interarrival::out::std"],
+            result["interarrival::overall::std"],
+            result["interarrival::in::percentile-75"],
+            result["interarrival::out::percentile-75"],
+            result["interarrival::overall::percentile-75"],
+        )
+    ]
 
 
 def test_interarrival_stats_unidir(unidir_trace: Trace):
     """Test interarrival stats for unidirectional traces."""
     # Determine whether this trace is only outgoing or incoming packets
-    is_outgoing = (unidir_trace[0].direction == 1)
+    is_outgoing = unidir_trace[0].direction == 1
 
     # Reference results taken from the same trace with both directions
     ref_result = {
@@ -142,8 +148,9 @@ def test_interarrival_stats_unidir(unidir_trace: Trace):
         ref_result[f"interarrival::{other_direction}::{stat}"] = np.nan
         # The overall stat is the same as whichever direction is present
         direction = "out" if is_outgoing else "in"
-        ref_result[f"interarrival::overall::{stat}"] = \
-            ref_result[f"interarrival::{direction}::{stat}"]
+        ref_result[f"interarrival::overall::{stat}"] = ref_result[
+            f"interarrival::{direction}::{stat}"
+        ]
 
     result = _features.interarrival_stats(unidir_trace, allow_unidir=True)
 
@@ -156,21 +163,25 @@ def test_time_percentiles(trace, sample_trace: Trace):
     result = _features.time_percentiles(trace)
 
     assert ref_result == [
-        result['time::in::percentile-25'], result['time::in::percentile-50'],
-        result['time::in::percentile-75'], result['time::in::percentile-100'],
-        result['time::out::percentile-25'], result['time::out::percentile-50'],
-        result['time::out::percentile-75'], result['time::out::percentile-100'],
-        result['time::overall::percentile-25'],
-        result['time::overall::percentile-50'],
-        result['time::overall::percentile-75'],
-        result['time::overall::percentile-100'],
+        result["time::in::percentile-25"],
+        result["time::in::percentile-50"],
+        result["time::in::percentile-75"],
+        result["time::in::percentile-100"],
+        result["time::out::percentile-25"],
+        result["time::out::percentile-50"],
+        result["time::out::percentile-75"],
+        result["time::out::percentile-100"],
+        result["time::overall::percentile-25"],
+        result["time::overall::percentile-50"],
+        result["time::overall::percentile-75"],
+        result["time::overall::percentile-100"],
     ]
 
 
 def test_time_percentiles_unidir(unidir_trace: Trace):
     """The percentiles of the timestamps should allow unidirectional traces."""
     # Determine whether this trace is only outgoing or incoming packets
-    is_outgoing = (unidir_trace[0].direction == 1)
+    is_outgoing = unidir_trace[0].direction == 1
 
     # Reference results taken from the output of the run in the unidirectional,
     # as the multidirectional setting does not account for the shift in
@@ -192,8 +203,9 @@ def test_time_percentiles_unidir(unidir_trace: Trace):
         ref_result[f"time::{other_direction}::percentile-{percentile}"] = np.nan
         # The overall stat is the same as whichever direction is present
         direction = "out" if is_outgoing else "in"
-        ref_result[f"time::overall::percentile-{percentile}"] = \
-            ref_result[f"time::{direction}::percentile-{percentile}"]
+        ref_result[f"time::overall::percentile-{percentile}"] = ref_result[
+            f"time::{direction}::percentile-{percentile}"
+        ]
 
     result = _features.time_percentiles(unidir_trace, allow_unidir=True)
     assert result == approx(ref_result, nan_ok=True)
@@ -210,7 +222,7 @@ def test_packet_counts(trace, sample_trace: Trace):
 def test_packet_counts_unidir(unidir_trace: Trace):
     """The packet counts should be zero for missing direction."""
     # Determine whether this trace is only outgoing or incoming packets
-    is_outgoing = (unidir_trace[0].direction == 1)
+    is_outgoing = unidir_trace[0].direction == 1
 
     # Reference results taken from the full trace with both directions
     ref_result = {
@@ -229,8 +241,7 @@ def test_head_tail_concentration(trace_info):
     """
     trace, sample_trace = trace_info
 
-    ref_result = rf_fextract.first_and_last_30_pkts_stats(
-        as_lines(sample_trace))
+    ref_result = rf_fextract.first_and_last_30_pkts_stats(as_lines(sample_trace))
     result = _features.head_and_tail_concentration(trace, 30)
 
     assert ref_result == list(result.values())
@@ -238,8 +249,7 @@ def test_head_tail_concentration(trace_info):
 
 def test_packet_concentration_stats(trace, sample_trace: Trace):
     """Concentrations should match the reference implementation."""
-    *ref_stats, ref_conc = rf_fextract.pkt_concentration_stats(
-        as_lines(sample_trace))
+    *ref_stats, ref_conc = rf_fextract.pkt_concentration_stats(as_lines(sample_trace))
     stats, conc = _features.packet_concentration_stats(trace, 20)
 
     assert ref_stats == list(stats.values())
@@ -250,7 +260,7 @@ def test_packet_concentration_stats_unidir(unidir_trace: Trace):
     """Concentrations should match the reference implementation."""
     chunk_size = 20
     # Determine whether this trace is only outgoing or incoming packets
-    is_outgoing = (unidir_trace[0].direction == 1)
+    is_outgoing = unidir_trace[0].direction == 1
 
     # Since every chunk will have only outgoing packets, we can generate what
     # would be observed below
@@ -262,17 +272,15 @@ def test_packet_concentration_stats_unidir(unidir_trace: Trace):
         ref_conc.append(n_packets % chunk_size)
 
     ref_stats = {
-        'std::out': np.std(ref_conc) if is_outgoing else 0,
-        'mean::out': np.mean(ref_conc) if is_outgoing else 0,
-        'median::out': np.median(ref_conc) if is_outgoing else 0,
+        "std::out": np.std(ref_conc) if is_outgoing else 0,
+        "mean::out": np.mean(ref_conc) if is_outgoing else 0,
+        "median::out": np.median(ref_conc) if is_outgoing else 0,
         # The last would possibly have less than chunk_size packets
-        'min::out': ref_conc[-1] if is_outgoing else 0,
+        "min::out": ref_conc[-1] if is_outgoing else 0,
         # All except the last would have the max
-        'max::out': ref_conc[0] if is_outgoing else 0,
+        "max::out": ref_conc[0] if is_outgoing else 0,
     }
-    ref_stats = {
-        f"concentration-stats::{key}": val for key, val in ref_stats.items()
-    }
+    ref_stats = {f"concentration-stats::{key}": val for key, val in ref_stats.items()}
 
     stats, conc = _features.packet_concentration_stats(unidir_trace, chunk_size)
     assert ref_stats == stats
@@ -302,7 +310,7 @@ def test_packet_ordering_stats(trace, sample_trace: Trace):
 def test_packet_ordering_stats_unidir(unidir_trace: Trace):
     """The packet ordering statistics should match the reference."""
     # Determine whether this trace is only outgoing or incoming packets
-    is_outgoing = (unidir_trace[0].direction == 1)
+    is_outgoing = unidir_trace[0].direction == 1
 
     # Based on the calculation of the feature, it reduces to the below in the
     # case when there is no interleaving
@@ -330,8 +338,8 @@ def test_in_out_fraction(trace_info):
     ref_in, ref_out = rf_fextract.perc_inc_out(as_lines(sample_trace))
     result = _features.in_out_fraction(trace)
 
-    assert ref_in == result['fraction-incoming']
-    assert ref_out == result['fraction-outgoing']
+    assert ref_in == result["fraction-incoming"]
+    assert ref_out == result["fraction-outgoing"]
 
 
 def test_total_packet_sizes(trace_info):
@@ -358,9 +366,14 @@ def test_extract_features(trace, sample_trace: Trace):
 def test_make_trace_array(split_trace, sample_trace):
     """It should correctly convert a split_trace to a trace."""
     expected = sample_trace
-    converted = _features.make_trace_array(
-        timestamps=split_trace.timestamps, sizes=split_trace.sizes
-    ).astype('f,f,f').view('f').reshape((-1, 3))
+    converted = (
+        _features.make_trace_array(
+            timestamps=split_trace.timestamps, sizes=split_trace.sizes
+        )
+        .astype("f,f,f")
+        .view("f")
+        .reshape((-1, 3))
+    )
     np.testing.assert_allclose(expected, converted)
 
 
@@ -379,10 +392,11 @@ def test_extract_features_split(sample_trace: Trace, split_trace):
         features, features_split, _features.ALL_DEFAULT_FEATURES
     ):
         np.testing.assert_allclose(
-            expected, result, err_msg=f"Result differs in feature {tag!r}")
+            expected, result, err_msg=f"Result differs in feature {tag!r}"
+        )
 
 
-@pytest.mark.parametrize('n_features', [50, 100, 150, 200, 300])
+@pytest.mark.parametrize("n_features", [50, 100, 150, 200, 300])
 def test_extract_features_length(n_features, trace):
     """The number of features should be as expected."""
     features = _features.extract_features(trace, n_features)
@@ -404,50 +418,67 @@ def test_extract_features_length(n_features, trace):
 #     return times, sizes, features
 
 
-@pytest.mark.parametrize('n_features', [100, 300])
+@pytest.mark.parametrize("n_features", [100, 300])
 def test_extract_features_sequence(dataset, n_features):
-    """It should correct extract features that are provided as a sequence.
-    """
+    """It should correct extract features that are provided as a sequence."""
     sizes, times, _ = dataset
     features = _features.extract_features_sequence(
-        timestamps=times, sizes=sizes, max_size=n_features)
+        timestamps=times, sizes=sizes, max_size=n_features
+    )
 
-    expected_features = np.asarray([
-        _features.extract_features(
-            sizes=size_row, timestamps=time_row, max_size=n_features)
-        for size_row, time_row in zip(sizes, times)
-    ])
+    expected_features = np.asarray(
+        [
+            _features.extract_features(
+                sizes=size_row, timestamps=time_row, max_size=n_features
+            )
+            for size_row, time_row in zip(sizes, times)
+        ]
+    )
     np.testing.assert_allclose(expected_features, features)
 
 
-@pytest.mark.parametrize('n_features', [100, 300])
+def test_extract_features_sequence_empty():
+    """It should correct extract features that are provided as a sequence."""
+    features = _features.extract_features_sequence(
+        timestamps=[[]], sizes=[[]], allow_empty=True
+    )
+    # Check that features are all either nan or zero
+    assert np.all(np.isnan(features) | (features == 0))
+
+
+@pytest.mark.parametrize("n_features", [100, 300])
 def test_extract_features_sequence_mp(dataset, n_features):
-    """It should correct extract features that are provided as a sequence.
-    """
+    """It should correct extract features that are provided as a sequence."""
     sizes, times, _ = dataset
     features = _features.extract_features_sequence(
-        timestamps=times, sizes=sizes, max_size=n_features, n_jobs=3)
+        timestamps=times, sizes=sizes, max_size=n_features, n_jobs=3
+    )
 
-    expected_features = np.asarray([
-        _features.extract_features(
-            sizes=size_row, timestamps=time_row, max_size=n_features)
-        for size_row, time_row in zip(sizes, times)
-    ])
+    expected_features = np.asarray(
+        [
+            _features.extract_features(
+                sizes=size_row, timestamps=time_row, max_size=n_features
+            )
+            for size_row, time_row in zip(sizes, times)
+        ]
+    )
     np.testing.assert_allclose(expected_features, features)
 
 
-@pytest.mark.parametrize('n_jobs', [2, None])
+@pytest.mark.parametrize("n_jobs", [2, None])
 def test_extract_features_sequence_mp_jobs(dataset, n_jobs):
-    """It should correct extract features that are provided as a sequence.
-    """
+    """It should correct extract features that are provided as a sequence."""
     sizes, times, _ = dataset
     features = _features.extract_features_sequence(
-        timestamps=times, sizes=sizes, n_jobs=n_jobs)
+        timestamps=times, sizes=sizes, n_jobs=n_jobs
+    )
 
-    expected_features = np.asarray([
-        _features.extract_features(sizes=size_row, timestamps=time_row)
-        for size_row, time_row in zip(sizes, times)
-    ])
+    expected_features = np.asarray(
+        [
+            _features.extract_features(sizes=size_row, timestamps=time_row)
+            for size_row, time_row in zip(sizes, times)
+        ]
+    )
     np.testing.assert_allclose(expected_features, features)
 
 
