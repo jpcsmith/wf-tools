@@ -23,8 +23,12 @@ from tensorflow.python.keras.utils.np_utils import to_categorical
 
 from lab.classifiers.wrappers import ModifiedKerasClassifier
 
+# The learning rate decay used in the paper
+PAPER_LR_DECAY: float = np.sqrt(0.1)
+# The learning rate used in the original paper
+PAPER_LEARNING_RATE: float = 0.001
 
-PARAMETERS = {'kernel_initializer': 'he_normal'}
+PARAMETERS = {"kernel_initializer": "he_normal"}
 
 
 class Crop(layers.Layer):
@@ -32,11 +36,9 @@ class Crop(layers.Layer):
     One of start and end can be none, in which case it's equivalent to
     inputs[:, :end] and inputs[:, start:] respectively.
     """
+
     def __init__(
-        self,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-        **kwargs
+        self, start: Optional[int] = None, end: Optional[int] = None, **kwargs
     ):
         super().__init__(self, **kwargs)
         assert start is not None or end is not None
@@ -45,7 +47,7 @@ class Crop(layers.Layer):
 
     def call(self, inputs):
         """Run the layer."""
-        return inputs[:, self.start:self.end]
+        return inputs[:, self.start : self.end]
 
     def get_config(self) -> dict:
         """Return the configuration."""
@@ -72,7 +74,7 @@ def build_model(
     n_meta_features: int = 7,
     dilations: bool = True,
     tag: str = "varcnn",
-    learning_rate: float = 0.001
+    learning_rate: float = PAPER_LEARNING_RATE,
 ):
     """Build the Var-CNN model.
 
@@ -99,13 +101,14 @@ def build_model(
 
     # Constructs dir or time ResNet
     input_layer = keras.Input(
-        shape=(n_packet_features + n_meta_features, ), name="input")
+        shape=(n_packet_features + n_meta_features,), name="input"
+    )
 
-    layer = (Crop(end=n_packet_features)(input_layer)
-             if use_metadata else input_layer)
+    layer = Crop(end=n_packet_features)(input_layer) if use_metadata else input_layer
     layer = layers.Reshape((n_packet_features, 1))(layer)
     output_layer = ResNet18(
-        layer, tag, block=(dilated_basic_1d if dilations else basic_1d))
+        layer, tag, block=(dilated_basic_1d if dilations else basic_1d)
+    )
 
     concat_params = [output_layer]
     combined = concat_params[0]
@@ -115,9 +118,8 @@ def build_model(
         metadata_output = Crop(start=-n_meta_features)(input_layer)
         # consider this the embedding of all the metadata
         metadata_output = layers.Dense(32)(metadata_output)
-        metadata_output = layers.BatchNormalization()(
-            metadata_output)
-        metadata_output = layers.Activation('relu')(metadata_output)
+        metadata_output = layers.BatchNormalization()(metadata_output)
+        metadata_output = layers.Activation("relu")(metadata_output)
 
         concat_params.append(metadata_output)
         combined = layers.Concatenate()(concat_params)
@@ -126,34 +128,43 @@ def build_model(
     if len(concat_params) > 1:
         combined = layers.Dense(1024)(combined)
         combined = layers.BatchNormalization()(combined)
-        combined = layers.Activation('relu')(combined)
+        combined = layers.Activation("relu")(combined)
         combined = layers.Dropout(0.5)(combined)
 
-    model_output = layers.Dense(units=n_classes, activation='softmax',
-                                name='model_output')(combined)
+    model_output = layers.Dense(
+        units=n_classes, activation="softmax", name="model_output"
+    )(combined)
 
     model = keras.Model(inputs=input_layer, outputs=model_output)
     model.compile(
-        loss='categorical_crossentropy', metrics=['accuracy'],
-        optimizer=keras.optimizers.Adam(learning_rate))
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
+        optimizer=keras.optimizers.Adam(learning_rate),
+    )
 
     return model
 
 
 def default_callbacks(
-    base_patience: int = 5, *,
+    base_patience: int = 5,
+    *,
     monitor="val_accuracy",
-    lr_decay: float = np.sqrt(0.1),
+    lr_decay: float = PAPER_LR_DECAY,
     verbose: int = 0,
 ):
     """Recommended callbacks from the paper."""
     return [
         keras.callbacks.ReduceLROnPlateau(
-            monitor=monitor, factor=lr_decay, cooldown=0, min_lr=1e-5,
-            patience=base_patience, verbose=verbose),
+            monitor=monitor,
+            factor=lr_decay,
+            cooldown=0,
+            min_lr=1e-5,
+            patience=base_patience,
+            verbose=verbose,
+        ),
         keras.callbacks.EarlyStopping(
-            monitor=monitor, patience=(2 * base_patience),
-            restore_best_weights=True),
+            monitor=monitor, patience=(2 * base_patience), restore_best_weights=True
+        ),
     ]
 
 
@@ -163,6 +174,7 @@ class VarCNNClassifier(ModifiedKerasClassifier):
 
     See `varcnn.build_model` for other arguments.
     """
+
     def __init__(self, **kwargs):
         if "build_fn" in kwargs:
             del kwargs["build_fn"]
@@ -174,26 +186,31 @@ class VarCNNClassifier(ModifiedKerasClassifier):
         n_meta_features: int = 7,
         dilations: bool = True,
         tag: str = "varcnn",
-        learning_rate: float = 0.001
+        learning_rate: float = PAPER_LEARNING_RATE,
     ):
         return build_model(
-            self.n_classes_, n_packet_features, n_meta_features,
-            dilations, tag, learning_rate
+            self.n_classes_,
+            n_packet_features,
+            n_meta_features,
+            dilations,
+            tag,
+            learning_rate,
         )
 
     def predict_proba(self, x, **kwargs):
-        """Returns class probability estimates for the given test data.
-        """
+        """Returns class probability estimates for the given test data."""
         # Code taken from KerasClassifier and Sequential, as Models do not
         # support predict_proba
         kwargs = self.filter_sk_params(keras.Model.predict, kwargs)
         probs = self.model.predict(x, **kwargs)
 
-        if probs.min() < 0. or probs.max() > 1.:
-            logging.warning('Network returning invalid probability values. '
-                            'The last layer might not normalize predictions '
-                            'into probabilities '
-                            '(like softmax or sigmoid would).')
+        if probs.min() < 0.0 or probs.max() > 1.0:
+            logging.warning(
+                "Network returning invalid probability values. "
+                "The last layer might not normalize predictions "
+                "into probabilities "
+                "(like softmax or sigmoid would)."
+            )
 
         # check if binary classification
         if probs.shape[1] == 1:
@@ -202,8 +219,7 @@ class VarCNNClassifier(ModifiedKerasClassifier):
         return probs
 
     def predict(self, x, **kwargs):
-        """Returns the class predictions for the given test data.
-        """
+        """Returns the class predictions for the given test data."""
         probs = self.predict_proba(x, **kwargs)
         classes = np.argmax(probs, axis=1)
         return self.classes_[classes]
@@ -223,9 +239,7 @@ class VarCNNClassifier(ModifiedKerasClassifier):
             val_x, val_y = kwargs["validation_data"]
 
             if len(val_y.shape) == 1:
-                kwargs["validation_data"] = self._reshape_val_data(
-                    x, y, val_x, val_y
-                )
+                kwargs["validation_data"] = self._reshape_val_data(x, y, val_x, val_y)
 
         super().fit(x, y, **kwargs)
 
@@ -242,12 +256,13 @@ class VarCNNClassifier(ModifiedKerasClassifier):
         # Remove any columns to be dropped from X
         n_features = train_x.shape[1]
         idx = np.r_[
-            :params["n_packet_features"],
-            (n_features - params["n_meta_features"]):n_features
+            : params["n_packet_features"],
+            (n_features - params["n_meta_features"]) : n_features,
         ]
         val_x = val_x[:, idx]
 
         return (val_x, val_y)
+
 
 # def first_n_packets(features, *, n_packets: int):
 #     """Return the first n_packets packets along with the meta features."""
@@ -258,9 +273,16 @@ class VarCNNClassifier(ModifiedKerasClassifier):
 
 # Code for standard ResNet model is based on
 # https://github.com/broadinstitute/keras-resnet
-def dilated_basic_1d(filters, suffix, stage=0, block=0, kernel_size=3,
-                     numerical_name=False, stride=None,
-                     dilations=(1, 1)):
+def dilated_basic_1d(
+    filters,
+    suffix,
+    stage=0,
+    block=0,
+    kernel_size=3,
+    numerical_name=False,
+    stride=None,
+    dilations=(1, 1),
+):
     """A one-dimensional basic residual block with dilations.
 
     :param filters: the output’s feature space
@@ -281,51 +303,68 @@ def dilated_basic_1d(filters, suffix, stage=0, block=0, kernel_size=3,
             stride = 2
 
     if block > 0 and numerical_name:
-        block_char = 'b{}'.format(block)
+        block_char = "b{}".format(block)
     else:
-        block_char = chr(ord('a') + block)
+        block_char = chr(ord("a") + block)
 
     stage_char = str(stage + 2)
 
     def dilated_basic_1d_block(x):
         y = layers.Conv1D(
-            filters, kernel_size, padding='causal', strides=stride,
-            dilation_rate=dilations[0], use_bias=False,
-            name='res{}{}_branch2a_{}'.format(stage_char, block_char, suffix),
-            **PARAMETERS)(x)
+            filters,
+            kernel_size,
+            padding="causal",
+            strides=stride,
+            dilation_rate=dilations[0],
+            use_bias=False,
+            name="res{}{}_branch2a_{}".format(stage_char, block_char, suffix),
+            **PARAMETERS,
+        )(x)
         y = layers.BatchNormalization(
-            epsilon=1e-5, name='bn{}{}_branch2a_{}'.format(
-                stage_char, block_char, suffix))(y)
-        y = layers.Activation('relu', name='res{}{}_branch2a_relu_{}'.format(
-            stage_char, block_char, suffix))(y)
+            epsilon=1e-5,
+            name="bn{}{}_branch2a_{}".format(stage_char, block_char, suffix),
+        )(y)
+        y = layers.Activation(
+            "relu",
+            name="res{}{}_branch2a_relu_{}".format(stage_char, block_char, suffix),
+        )(y)
 
         y = layers.Conv1D(
-            filters, kernel_size, padding='causal', use_bias=False,
-            dilation_rate=dilations[1], name='res{}{}_branch2b_{}'.format(
-                stage_char, block_char, suffix),
-            **PARAMETERS)(y)
+            filters,
+            kernel_size,
+            padding="causal",
+            use_bias=False,
+            dilation_rate=dilations[1],
+            name="res{}{}_branch2b_{}".format(stage_char, block_char, suffix),
+            **PARAMETERS,
+        )(y)
         y = layers.BatchNormalization(
-            epsilon=1e-5, name='bn{}{}_branch2b_{}'.format(
-                stage_char, block_char, suffix))(y)
+            epsilon=1e-5,
+            name="bn{}{}_branch2b_{}".format(stage_char, block_char, suffix),
+        )(y)
 
         if block == 0:
             shortcut = layers.Conv1D(
-                filters, 1, strides=stride, use_bias=False,
-                name='res{}{}_branch1_{}'.format(
-                    stage_char, block_char, suffix), **PARAMETERS)(x)
+                filters,
+                1,
+                strides=stride,
+                use_bias=False,
+                name="res{}{}_branch1_{}".format(stage_char, block_char, suffix),
+                **PARAMETERS,
+            )(x)
             shortcut = layers.BatchNormalization(
-                epsilon=1e-5, name='bn{}{}_branch1_{}'.format(
-                    stage_char, block_char,
-                    suffix))(shortcut)
+                epsilon=1e-5,
+                name="bn{}{}_branch1_{}".format(stage_char, block_char, suffix),
+            )(shortcut)
         else:
             shortcut = x
 
-        y = layers.Add(
-            name='res{}{}_{}'.format(stage_char, block_char, suffix))(
-                [y, shortcut])
+        y = layers.Add(name="res{}{}_{}".format(stage_char, block_char, suffix))(
+            [y, shortcut]
+        )
         y = layers.Activation(
-            'relu', name='res{}{}_relu_{}'.format(
-                stage_char, block_char, suffix))(y)
+            "relu", name="res{}{}_relu_{}".format(stage_char, block_char, suffix)
+        )(y)
         return y
 
     return dilated_basic_1d_block
@@ -333,8 +372,16 @@ def dilated_basic_1d(filters, suffix, stage=0, block=0, kernel_size=3,
 
 # Code for standard ResNet model is based on
 # https://github.com/broadinstitute/keras-resnet
-def basic_1d(filters, suffix, stage=0, block=0, kernel_size=3,
-             numerical_name=False, stride=None, dilations=(1, 1)):
+def basic_1d(
+    filters,
+    suffix,
+    stage=0,
+    block=0,
+    kernel_size=3,
+    numerical_name=False,
+    stride=None,
+    dilations=(1, 1),
+):
     """A one-dimensional basic residual block without dilations.
 
     :param filters: the output’s feature space
@@ -357,49 +404,68 @@ def basic_1d(filters, suffix, stage=0, block=0, kernel_size=3,
     dilations = (1, 1)
 
     if block > 0 and numerical_name:
-        block_char = 'b{}'.format(block)
+        block_char = "b{}".format(block)
     else:
-        block_char = chr(ord('a') + block)
+        block_char = chr(ord("a") + block)
 
     stage_char = str(stage + 2)
 
     def basic_1d_block(x):
         y = layers.Conv1D(
-            filters, kernel_size, padding='same', strides=stride,
-            dilation_rate=dilations[0], use_bias=False,
-            name='res{}{}_branch2a_{}'.format(stage_char, block_char,
-                                              suffix), **PARAMETERS)(x)
+            filters,
+            kernel_size,
+            padding="same",
+            strides=stride,
+            dilation_rate=dilations[0],
+            use_bias=False,
+            name="res{}{}_branch2a_{}".format(stage_char, block_char, suffix),
+            **PARAMETERS,
+        )(x)
         y = layers.BatchNormalization(
-            epsilon=1e-5, name='bn{}{}_branch2a_{}'.format(
-                stage_char, block_char, suffix))(y)
-        y = layers.Activation('relu', name='res{}{}_branch2a_relu_{}'.format(
-            stage_char, block_char, suffix))(y)
+            epsilon=1e-5,
+            name="bn{}{}_branch2a_{}".format(stage_char, block_char, suffix),
+        )(y)
+        y = layers.Activation(
+            "relu",
+            name="res{}{}_branch2a_relu_{}".format(stage_char, block_char, suffix),
+        )(y)
 
         y = layers.Conv1D(
-            filters, kernel_size, padding='same', use_bias=False,
+            filters,
+            kernel_size,
+            padding="same",
+            use_bias=False,
             dilation_rate=dilations[1],
-            name='res{}{}_branch2b_{}'.format(
-                stage_char, block_char, suffix), **PARAMETERS)(y)
+            name="res{}{}_branch2b_{}".format(stage_char, block_char, suffix),
+            **PARAMETERS,
+        )(y)
         y = layers.BatchNormalization(
-            epsilon=1e-5, name='bn{}{}_branch2b_{}'.format(
-                stage_char, block_char, suffix))(y)
+            epsilon=1e-5,
+            name="bn{}{}_branch2b_{}".format(stage_char, block_char, suffix),
+        )(y)
 
         if block == 0:
             shortcut = layers.Conv1D(
-                filters, 1, strides=stride, use_bias=False,
-                name='res{}{}_branch1_{}'.format(
-                    stage_char, block_char, suffix),
-                **PARAMETERS)(x)
+                filters,
+                1,
+                strides=stride,
+                use_bias=False,
+                name="res{}{}_branch1_{}".format(stage_char, block_char, suffix),
+                **PARAMETERS,
+            )(x)
             shortcut = layers.BatchNormalization(
-                epsilon=1e-5, name='bn{}{}_branch1_{}'.format(
-                    stage_char, block_char, suffix))(shortcut)
+                epsilon=1e-5,
+                name="bn{}{}_branch1_{}".format(stage_char, block_char, suffix),
+            )(shortcut)
         else:
             shortcut = x
 
-        y = layers.Add(name='res{}{}_{}'.format(
-            stage_char, block_char, suffix))([y, shortcut])
-        y = layers.Activation('relu', name='res{}{}_relu_{}'.format(
-            stage_char, block_char, suffix))(y)
+        y = layers.Add(name="res{}{}_{}".format(stage_char, block_char, suffix))(
+            [y, shortcut]
+        )
+        y = layers.Activation(
+            "relu", name="res{}{}_relu_{}".format(stage_char, block_char, suffix)
+        )(y)
 
         return y
 
@@ -427,29 +493,31 @@ def ResNet18(inputs, suffix, blocks=None, block=None, numerical_names=None):
     if numerical_names is None:
         numerical_names = [True] * len(blocks)
 
-    x = layers.ZeroPadding1D(padding=3, name='padding_conv1_' + suffix)(inputs)
-    x = layers.Conv1D(
-        64, 7, strides=2, use_bias=False, name='conv1_' + suffix)(x)
-    x = layers.BatchNormalization(
-        epsilon=1e-5, name='bn_conv1_' + suffix)(x)
-    x = layers.Activation('relu', name='conv1_relu_' + suffix)(x)
-    x = layers.MaxPooling1D(
-        3, strides=2, padding='same', name='pool1_' + suffix)(x)
+    x = layers.ZeroPadding1D(padding=3, name="padding_conv1_" + suffix)(inputs)
+    x = layers.Conv1D(64, 7, strides=2, use_bias=False, name="conv1_" + suffix)(x)
+    x = layers.BatchNormalization(epsilon=1e-5, name="bn_conv1_" + suffix)(x)
+    x = layers.Activation("relu", name="conv1_relu_" + suffix)(x)
+    x = layers.MaxPooling1D(3, strides=2, padding="same", name="pool1_" + suffix)(x)
 
     features = 64
     outputs = []
 
     for stage_id, iterations in enumerate(blocks):
-        x = block(features, suffix, stage_id, 0, dilations=(1, 2),
-                  numerical_name=False)(x)
+        x = block(
+            features, suffix, stage_id, 0, dilations=(1, 2), numerical_name=False
+        )(x)
         for block_id in range(1, iterations):
-            x = block(features, suffix, stage_id, block_id, dilations=(4, 8),
-                      numerical_name=(
-                              block_id > 0 and numerical_names[stage_id]))(
-                x)
+            x = block(
+                features,
+                suffix,
+                stage_id,
+                block_id,
+                dilations=(4, 8),
+                numerical_name=(block_id > 0 and numerical_names[stage_id]),
+            )(x)
 
         features *= 2
         outputs.append(x)
 
-    x = layers.GlobalAveragePooling1D(name='pool5_' + suffix)(x)
+    x = layers.GlobalAveragePooling1D(name="pool5_" + suffix)(x)
     return x
