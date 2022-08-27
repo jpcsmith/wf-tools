@@ -10,6 +10,8 @@ The implementation uses code from the original paper, specifically the
 code from 'Model_NoDef.py'.  The original can be found at
 https://github.com/deep-fingerprinting/df
 """
+from typing import Optional
+
 # pylint: disable=too-many-statements,too-few-public-methods
 from tensorflow.compat.v1 import keras
 from tensorflow.compat.v1.keras import layers, initializers
@@ -25,15 +27,31 @@ PAPER_LEARNING_RATE: float = 0.002
 class DeepFingerprintingClassifier(ModifiedKerasClassifier):
     """Website fingerprinting classifer using a CNN."""
 
-    def __init__(self, **kwargs):
-        if "build_fn" in kwargs:
-            del kwargs["build_fn"]
-        super().__init__(build_fn=build_model, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.n_features_: Optional[int] = None
 
     def __repr__(self) -> str:
         params = self.filter_sk_params(build_model)
         return "DeepFingerprintingClassifier({})".format(
             ", ".join(f"{arg}={value!r}" for arg, value in params.items())
+        )
+
+    def fit(self, x, y, **kwargs):
+        self.n_features_ = x.shape[1]
+        super().fit(x, y, **kwargs)
+
+    def __call__(
+        self,
+        n_classes: int,
+        n_features: int = 0,
+        metric="accuracy",
+        learning_rate: float = 0.002,
+    ):
+        assert self.n_features_ is not None
+        n_features = n_features if n_features > 0 else self.n_features_
+        return build_model(
+            self.n_features_, n_classes, metric=metric, learning_rate=learning_rate
         )
 
 
@@ -208,6 +226,10 @@ def build_model(
         )
     )
     model.add(layers.Activation("softmax", name="softmax"))
+
+    if not isinstance(metric, list):
+        metric = [metric]
+
     model.compile(
         loss="categorical_crossentropy",
         optimizer=keras.optimizers.Adamax(
@@ -217,7 +239,7 @@ def build_model(
             epsilon=1e-08,
             decay=0.0,
         ),
-        metrics=[metric],
+        metrics=metric,
     )
 
     return model
